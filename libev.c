@@ -1,4 +1,12 @@
 
+#define LIBEV_DEBUG 0
+
+#if LIBEV_DEBUG
+#  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
+#  define IF_DEBUG(x) x
+#else
+#  define IF_DEBUG(x)
+#endif
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -12,6 +20,13 @@
 #include "php_libev.h"
 
 #include <ev.h>
+
+// Override PHP's default debugging behaviour
+// if we only want to debug this extension
+#ifdef LIBEV_DEBUG
+#  undef NDEBUG
+#endif
+#include <assert.h>
 
 #ifdef COMPILE_DL_LIBEV
 ZEND_GET_MODULE(libev)
@@ -45,16 +60,21 @@ typedef struct event_loop_object {
 
 void event_free_storage(void *object TSRMLS_DC)
 {
+	IF_DEBUG(libev_printf("Freeing event_object..."));
+	
 	event_object *obj = (event_object *) object;
 	
 	zend_hash_destroy(obj->std.properties);
 	FREE_HASHTABLE(obj->std.properties);
 	
-	// TODO: Is this correct?
+	IF_DEBUG(assert(obj->callback));
+	
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
 	}
+	
+	IF_DEBUG(assert(obj->watcher));
 	
 	if(obj->watcher)
 	{
@@ -62,10 +82,14 @@ void event_free_storage(void *object TSRMLS_DC)
 	}
 	
 	efree(obj);
+	
+	IF_DEBUG(php_printf("done\n"));
 }
 
 zend_object_value event_create_handler(zend_class_entry *type TSRMLS_DC)
 {
+	IF_DEBUG(libev_printf("Allocating event_object..."));
+	
 	zval *tmp;
 	zend_object_value retval;
 	
@@ -81,23 +105,36 @@ zend_object_value event_create_handler(zend_class_entry *type TSRMLS_DC)
 	retval.handle = zend_objects_store_put(obj, NULL, event_free_storage, NULL TSRMLS_CC);
 	retval.handlers = &event_object_handlers;
 	
+	IF_DEBUG(php_printf("done\n"));
+	
 	return retval;
 }
 
 void event_loop_free_storage(void *object TSRMLS_DC)
 {
+	IF_DEBUG(libev_printf("Freeing event_loop_object..."));
+	
 	event_loop_object *obj = (event_loop_object *) object;
 	
-	ev_loop_destroy(obj->loop);
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
+	{
+		ev_loop_destroy(obj->loop);
+	}
 	
 	zend_hash_destroy(obj->std.properties);
 	FREE_HASHTABLE(obj->std.properties);
 	
 	efree(obj);
+	
+	IF_DEBUG(php_printf("done\n"));
 }
 
 zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 {
+	IF_DEBUG(libev_printf("Allocating event_loop_object..."));
+	
 	zval *tmp;
 	zend_object_value retval;
 	
@@ -113,11 +150,12 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	// TODO: Do we need to be able to change the parameter to ev_loop_new() here?
 	obj->loop = ev_loop_new(EVFLAG_AUTO);
 	
-	// TODO: Add macros around these
-	ev_verify(obj->loop);
+	IF_DEBUG(ev_verify(obj->loop));
 	
 	retval.handle = zend_objects_store_put(obj, NULL, event_loop_free_storage, NULL TSRMLS_CC);
 	retval.handlers = &event_loop_object_handlers;
+	
+	IF_DEBUG(php_printf("done\n"));
 	
 	return retval;
 }
@@ -127,7 +165,12 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
  */
 static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 {
+	IF_DEBUG(libev_printf("Calling PHP callback\n"));
+	
 	zval retval;
+	
+	IF_DEBUG(assert(w->data));
+	IF_DEBUG(assert(((event_object *)w->data)->callback));
 	
 	if(((event_object *)w->data)->callback)
 	{
@@ -342,6 +385,8 @@ PHP_METHOD(TimerEvent, getRepeat)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	IF_DEBUG(assert(obj->watcher));
+	
 	if(obj->watcher)
 	{
 		RETURN_DOUBLE(((ev_timer *)obj->watcher)->repeat);
@@ -361,6 +406,8 @@ PHP_METHOD(TimerEvent, getAfter)
 	// TODO: Not sure if this is a good idea, ev_timer->at is marked as private in ev.h
 	
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	IF_DEBUG(assert(obj->watcher));
 	
 	if(obj->watcher)
 	{
@@ -432,6 +479,8 @@ PHP_METHOD(PeriodicEvent, getTime)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	IF_DEBUG(assert(obj->watcher));
+	
 	if(obj->watcher)
 	{
 		RETURN_DOUBLE(ev_periodic_at((ev_periodic *)obj->watcher));
@@ -450,6 +499,8 @@ PHP_METHOD(PeriodicEvent, getOffset)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	IF_DEBUG(assert(obj->watcher));
+	
 	if(obj->watcher)
 	{
 		RETURN_DOUBLE(((ev_periodic *)obj->watcher)->offset);
@@ -466,6 +517,8 @@ PHP_METHOD(PeriodicEvent, getOffset)
 PHP_METHOD(PeriodicEvent, getInterval)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	IF_DEBUG(assert(obj->watcher));
 	
 	if(obj->watcher)
 	{
@@ -488,6 +541,8 @@ PHP_METHOD(PeriodicEvent, setInterval)
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &interval) != SUCCESS) {
 		return;
 	}
+	
+	IF_DEBUG(assert(obj->watcher));
 	
 	if(obj->watcher)
 	{
@@ -541,7 +596,9 @@ PHP_METHOD(EventLoop, notifyFork)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_loop_fork(obj->loop);
 		
@@ -561,7 +618,9 @@ PHP_METHOD(EventLoop, getIteration)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		RETURN_LONG(ev_iteration(obj->loop));
 	}
@@ -579,7 +638,9 @@ PHP_METHOD(EventLoop, getDepth)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		RETURN_LONG(ev_depth(obj->loop));
 	}
@@ -597,7 +658,9 @@ PHP_METHOD(EventLoop, now)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		RETURN_DOUBLE(ev_now(obj->loop));
 	}
@@ -617,7 +680,9 @@ PHP_METHOD(EventLoop, suspend)
 	// TODO: Implement a check for if we already have suspended the eventloop?
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_suspend(obj->loop);
 		
@@ -639,7 +704,9 @@ PHP_METHOD(EventLoop, resume)
 	// TODO: Implement a check for it suspend has been called?
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_resume(obj->loop);
 		
@@ -672,7 +739,9 @@ PHP_METHOD(EventLoop, run)
 		return;
 	}
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_run(obj->loop, (int)how);
 		
@@ -699,7 +768,9 @@ PHP_METHOD(EventLoop, breakLoop)
 		return;
 	}
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_break(obj->loop, how);
 		
@@ -725,7 +796,9 @@ PHP_METHOD(EventLoop, setIoCollectInterval)
 		return;
 	}
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		ev_set_io_collect_interval(obj->loop, interval);
 		
@@ -744,7 +817,9 @@ PHP_METHOD(EventLoop, getPendingCount)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(obj->loop != NULL)
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
 	{
 		RETURN_LONG(ev_pending_count(obj->loop));
 	}
@@ -773,6 +848,8 @@ PHP_METHOD(EventLoop, add)
 	
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
+	IF_DEBUG(assert(loop_obj->loop));
+	IF_DEBUG(assert(event->watcher));
 	
 	if(loop_obj->loop && event->watcher)
 	{
