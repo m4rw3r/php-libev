@@ -132,6 +132,14 @@ static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 }
 
 
+/**
+ * Creates an IO event which will trigger when there is data to read and/or data to write
+ * on the supplied stream.
+ * 
+ * @param  int  either IOEvent::READ and/or IOEvent::WRITE depending on type of event
+ * @param  resource  the PHP stream to watch
+ * @param  callback  the PHP callback to call
+ */
 PHP_METHOD(IOEvent, __construct)
 {
 	long events;
@@ -408,14 +416,11 @@ PHP_METHOD(PeriodicEvent, setInterval)
  */
 PHP_METHOD(EventLoop, notifyFork)
 {
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_loop_fork(loop);
+		ev_loop_fork(obj->loop);
 		
 		RETURN_BOOL(1);
 	}
@@ -431,14 +436,11 @@ PHP_METHOD(EventLoop, notifyFork)
  */
 PHP_METHOD(EventLoop, getIteration)
 {
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		RETURN_LONG(ev_iteration(loop));
+		RETURN_LONG(ev_iteration(obj->loop));
 	}
 	
 	RETURN_BOOL(0);
@@ -452,14 +454,11 @@ PHP_METHOD(EventLoop, getIteration)
  */
 PHP_METHOD(EventLoop, getDepth)
 {
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		RETURN_LONG(ev_depth(loop));
+		RETURN_LONG(ev_depth(obj->loop));
 	}
 	
 	RETURN_BOOL(0);
@@ -473,14 +472,11 @@ PHP_METHOD(EventLoop, getDepth)
  */
 PHP_METHOD(EventLoop, now)
 {
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		RETURN_DOUBLE(ev_now(loop));
+		RETURN_DOUBLE(ev_now(obj->loop));
 	}
 	
 	RETURN_BOOL(0);
@@ -496,14 +492,11 @@ PHP_METHOD(EventLoop, now)
 PHP_METHOD(EventLoop, suspend)
 {
 	// TODO: Implement a check for if we already have suspended the eventloop?
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_suspend(loop);
+		ev_suspend(obj->loop);
 		
 		RETURN_BOOL(true);
 	}
@@ -521,14 +514,11 @@ PHP_METHOD(EventLoop, suspend)
 PHP_METHOD(EventLoop, resume)
 {
 	// TODO: Implement a check for it suspend has been called?
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_resume(loop);
+		ev_resume(obj->loop);
 		
 		RETURN_BOOL(1);
 	}
@@ -552,7 +542,6 @@ PHP_METHOD(EventLoop, resume)
  */
 PHP_METHOD(EventLoop, run)
 {
-	struct ev_loop *loop;
 	long how = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -560,11 +549,9 @@ PHP_METHOD(EventLoop, run)
 		return;
 	}
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_run(loop, (int)how);
+		ev_run(obj->loop, (int)how);
 		
 		RETURN_BOOL(1);
 	}
@@ -582,7 +569,6 @@ PHP_METHOD(EventLoop, run)
  */
 PHP_METHOD(EventLoop, breakLoop)
 {
-	struct ev_loop *loop;
 	long how = EVBREAK_ONE;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -590,11 +576,9 @@ PHP_METHOD(EventLoop, breakLoop)
 		return;
 	}
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_break(loop, how);
+		ev_break(obj->loop, how);
 		
 		RETURN_BOOL(1);
 	}
@@ -611,7 +595,6 @@ PHP_METHOD(EventLoop, breakLoop)
  */
 PHP_METHOD(EventLoop, setIoCollectInterval)
 {
-	struct ev_loop *loop;
 	double interval = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -619,11 +602,9 @@ PHP_METHOD(EventLoop, setIoCollectInterval)
 		return;
 	}
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		ev_set_io_collect_interval(loop, interval);
+		ev_set_io_collect_interval(obj->loop, interval);
 		
 		RETURN_BOOL(1);
 	}
@@ -638,14 +619,11 @@ PHP_METHOD(EventLoop, setIoCollectInterval)
  */
 PHP_METHOD(EventLoop, getPendingCount)
 {
-	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	loop = obj->loop;
-	
-	if(loop != NULL)
+	if(obj->loop != NULL)
 	{
-		RETURN_LONG(ev_pending_count(loop));
+		RETURN_LONG(ev_pending_count(obj->loop));
 	}
 	
 	RETURN_BOOL(0);
