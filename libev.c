@@ -904,9 +904,8 @@ PHP_METHOD(EventLoop, getPendingCount)
 /**
  * Adds the event to the event loop.
  * 
- * **NOTE:** Right now you have to see to it so the Event instance won't be
- * garbage collected, this will be fixed soon. (If they are garbage collected,
- * PHP will crash with an assert failure.)
+ * This method will increase the refcount on the supplied Event, protecting it
+ * from garbage collection. Refcount will be decreased on remove.
  * 
  * @param  Event
  * @return boolean
