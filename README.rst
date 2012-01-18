@@ -187,11 +187,8 @@ Returns the number of pending events.
 
 **boolean EventLoop::add(libev\Event)**
 
-Adds the event to the event loop.
-
-**NOTE:** Right now you have to see to it so the Event instance won't be
-garbage collected, this will be fixed soon. (If they are garbage collected,
-PHP will crash with an assert failure.)
+Adds the event to the event loop. This will also protect them from garbage collection
+as long as they are active.
 
 **boolean EventLoop::remove(libev\Event)**
 

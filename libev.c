@@ -989,6 +989,8 @@ PHP_METHOD(EventLoop, remove)
 
 #undef ev_watcher_action
 
+// TODO: Implement EventLoop::getEvents() or something like that?
+
 
 static const function_entry event_methods[] = {
 	// Abstract __construct makes the class abstract
