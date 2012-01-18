@@ -22,22 +22,16 @@ zend_class_entry *io_event_ce;
 zend_class_entry *timer_event_ce;
 zend_class_entry *event_loop_ce;
 
-zend_object_handlers io_event_object_handlers;
-zend_object_handlers timer_event_object_handlers;
+
+zend_object_handlers event_object_handlers;
 zend_object_handlers event_loop_object_handlers;
 
 
-typedef struct io_event_object {
+typedef struct event_object {
 	zend_object std;
-	ev_io watcher;
 	zval *callback;
-} io_event_object;
-
-typedef struct timer_event_object {
-	zend_object std;
-	ev_timer watcher;
-	zval *callback;
-} timer_event_object;
+	ev_watcher *watcher;
+} event_object;
 
 typedef struct event_loop_object {
 	zend_object std;
@@ -45,9 +39,9 @@ typedef struct event_loop_object {
 } event_loop_object;
 
 
-void io_event_free_storage(void *object TSRMLS_DC)
+void event_free_storage(void *object TSRMLS_DC)
 {
-	io_event_object *obj = (io_event_object *) object;
+	event_object *obj = (event_object *) object;
 	
 	zend_hash_destroy(obj->std.properties);
 	FREE_HASHTABLE(obj->std.properties);
@@ -58,16 +52,21 @@ void io_event_free_storage(void *object TSRMLS_DC)
 		zval_ptr_dtor(&obj->callback);
 	}
 	
+	if(obj->watcher)
+	{
+		efree(obj->watcher);
+	}
+	
 	efree(obj);
 }
 
-zend_object_value io_event_create_handler(zend_class_entry *type TSRMLS_DC)
+zend_object_value event_create_handler(zend_class_entry *type TSRMLS_DC)
 {
 	zval *tmp;
 	zend_object_value retval;
 	
-	io_event_object *obj = (io_event_object *)emalloc(sizeof(io_event_object));
-	memset(obj, 0, sizeof(io_event_object));
+	event_object *obj = emalloc(sizeof(event_object));
+	memset(obj, 0, sizeof(event_object));
 	obj->std.ce = type;
 	
 	ALLOC_HASHTABLE(obj->std.properties);
@@ -75,8 +74,8 @@ zend_object_value io_event_create_handler(zend_class_entry *type TSRMLS_DC)
 	zend_hash_copy(obj->std.properties, &type->default_properties,
 	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
 	
-	retval.handle = zend_objects_store_put(obj, NULL, io_event_free_storage, NULL TSRMLS_CC);
-	retval.handlers = &io_event_object_handlers;
+	retval.handle = zend_objects_store_put(obj, NULL, event_free_storage, NULL TSRMLS_CC);
+	retval.handlers = &event_object_handlers;
 	
 	return retval;
 }
@@ -98,7 +97,7 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	zval *tmp;
 	zend_object_value retval;
 	
-	event_loop_object *obj = (event_loop_object *)emalloc(sizeof(event_loop_object));
+	event_loop_object *obj = emalloc(sizeof(event_loop_object));
 	memset(obj, 0, sizeof(event_loop_object));
 	obj->std.ce = type;
 	
@@ -107,16 +106,28 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	zend_hash_copy(obj->std.properties, &type->default_properties,
 	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
 	
+	// TODO: Do we need to be able to change the parameter to ev_loop_new() here?
+	obj->loop = ev_loop_new(EVFLAG_AUTO);
+	
+	// TODO: Add macros around these
+	ev_verify(obj->loop);
+	
 	retval.handle = zend_objects_store_put(obj, NULL, event_loop_free_storage, NULL TSRMLS_CC);
 	retval.handlers = &event_loop_object_handlers;
 	
 	return retval;
 }
 
-static void io_event_callback(struct ev_loop *loop, ev_io *w, int revents)
+static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 {
+	zval retval;
 	
+	if(call_user_function(EG(function_table), NULL, ((event_object *)w->data)->callback, &retval, 0, NULL TSRMLS_CC) == SUCCESS)
+	{
+		zval_dtor(&retval);
+	}
 }
+
 
 PHP_METHOD(IOEvent, __construct)
 {
@@ -124,7 +135,7 @@ PHP_METHOD(IOEvent, __construct)
 	php_socket_t file_desc;
 	zval **fd, *zcallback = NULL;
 	char *func_name;
-	io_event_object *obj;
+	event_object *obj;
 	php_stream *stream;
 	php_socket *php_sock;
 	zval *object = getThis();
@@ -170,24 +181,54 @@ PHP_METHOD(IOEvent, __construct)
 	}
 	efree(func_name);
 	
-	obj = (io_event_object *)zend_object_store_get_object(object TSRMLS_CC);
+	obj = (event_object *)zend_object_store_get_object(object TSRMLS_CC);
 	zval_add_ref(&zcallback);
 	obj->callback = zcallback;
 	
-	ev_io_init(&obj->watcher, io_event_callback, (int)file_desc, (int)events);
+	obj->watcher = emalloc(sizeof(ev_io));
+	obj->watcher->data = obj;
+	ev_io_init((ev_io *)obj->watcher, event_callback, (int)file_desc, (int)events);
 }
 
-PHP_METHOD(EventLoop, __construct)
+/**
+ * Creates a timer event which will occur approximately after $after seconds
+ * and after that will repeat with an approximate interval of $repeat.
+ * 
+ * @param  double
+ * @param  double    Default: 0 = no repeat
+ * @param  callback
+ */
+PHP_METHOD(TimerEvent, __construct)
 {
-	struct ev_loop *loop;
+	double after;
+	double repeat = 0.;
+	zval *callback;
+	char *func_name;
+	event_object *obj;
 	zval *object = getThis();
-	event_loop_object *obj;
 	
-	loop = ev_loop_new(EVFLAG_AUTO);
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
+		return;
+	}
 	
-	obj = (event_loop_object *)zend_object_store_get_object(object TSRMLS_CC);
-	obj->loop = loop;
+	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
+		efree(func_name);
+		RETURN_FALSE;
+	}
+	efree(func_name);
+	
+	obj = (event_object *)zend_object_store_get_object(object TSRMLS_CC);
+	zval_add_ref(&callback);
+	obj->callback = callback;
+	
+	obj->watcher = emalloc(sizeof(ev_timer));
+	obj->watcher->data = obj;
+	ev_timer_init((ev_timer *)obj->watcher, event_callback, after, repeat);
 }
+
+// TODO: implement support for ev_timer_again(loop, ev_timer*) ?
 
 /**
  * Notifies libev that a fork might have been done and forces it
@@ -254,6 +295,11 @@ PHP_METHOD(EventLoop, getDepth)
 	RETURN_BOOL(0);
 }
 
+static void timecallback(struct ev_loop *loop, ev_timer *w, int revents)
+{
+	php_printf("Timer!");
+}
+
 /**
  * Returns the time the current loop iteration received events.
  * 
@@ -262,6 +308,13 @@ PHP_METHOD(EventLoop, getDepth)
  */
 PHP_METHOD(EventLoop, now)
 {
+	struct ev_loop *loop = ev_loop_new(EVFLAG_AUTO);
+	ev_timer *timer = emalloc(sizeof(ev_timer));
+	ev_timer_init(timer, timecallback, 2., 1.);
+	ev_timer_start(loop, timer);
+	ev_run(loop, 0);
+	
+	/*
 	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -272,7 +325,7 @@ PHP_METHOD(EventLoop, now)
 		RETURN_DOUBLE(ev_now(loop));
 	}
 	
-	RETURN_BOOL(0);
+	RETURN_BOOL(0);*/
 }
 
 /**
@@ -353,7 +406,9 @@ PHP_METHOD(EventLoop, run)
 	
 	if(loop != NULL)
 	{
-		ev_run(loop, how);
+		php_printf("Pending: %d\n", ev_pending_count(loop));
+		
+		ev_run(loop, (int)how);
 		
 		RETURN_BOOL(1);
 	}
@@ -442,15 +497,32 @@ PHP_METHOD(EventLoop, getPendingCount)
 
 PHP_METHOD(EventLoop, add)
 {
-	struct ev_loop *loop;
-	zval* event_object;
-	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	zval *event_obj;
+	event_object *event;
+	zend_class_entry *object_ce;
+	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_object, event_ce) != SUCCESS) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
 		return;
 	}
 	
+	object_ce = zend_get_class_entry(event_obj);
+	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
+	if(object_ce == io_event_ce)
+	{
+		ev_io_start(loop_obj->loop, (ev_io *)event->watcher);
+		
+		RETURN_STRING("IOEvent", 1);
+	}
+	else if(object_ce == timer_event_ce)
+	{
+		ev_timer_start(loop_obj->loop, (ev_timer *)event->watcher);
+		
+		RETURN_STRING("TimerEvent", 1);
+	}
+	
+	RETURN_STRING("UNKNOWN", 1);
 }
 
 
@@ -463,8 +535,12 @@ static const function_entry io_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
+static const function_entry timer_event_methods[] = {
+	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	{NULL, NULL, NULL}
+};
+
 static const function_entry event_loop_methods[] = {
-	ZEND_ME(EventLoop, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
 	ZEND_ME(EventLoop, notifyFork, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getIteration, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getDepth, NULL, ZEND_ACC_PUBLIC)
@@ -491,6 +567,11 @@ static void libev_register_implements(zend_class_entry *class_entry, zend_class_
 
 PHP_MINIT_FUNCTION(libev)
 {
+	// Init generic object handlers for Event objects, prevent clone
+	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+	event_object_handlers.clone_obj = NULL;
+	
+	
 	// libev\Event interface
 	zend_class_entry ce;
 	INIT_CLASS_ENTRY(ce, "libev\\Event", event_methods);
@@ -503,14 +584,20 @@ PHP_MINIT_FUNCTION(libev)
 	io_event_ce = zend_register_internal_class(&ce3 TSRMLS_CC);
 	libev_register_implements(io_event_ce, event_ce TSRMLS_CC);
 	
-	// Override default object handlers so we can use custom struct
-	io_event_ce->create_object = io_event_create_handler;
-	memcpy(&io_event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-	io_event_object_handlers.clone_obj = NULL;
+	// Override default object creation
+	io_event_ce->create_object = event_create_handler;
 	
 	// IOEvent constants
 	zend_declare_class_constant_long(io_event_ce, "READ", sizeof("READ") - 1, EV_READ TSRMLS_CC);
 	zend_declare_class_constant_long(io_event_ce, "WRITE", sizeof("WRITE") - 1, EV_WRITE TSRMLS_CC);
+	
+	
+	// libev\TimerEvent
+	zend_class_entry ce4;
+	INIT_CLASS_ENTRY(ce4, "libev\\TimerEvent", timer_event_methods);
+	timer_event_ce = zend_register_internal_class(&ce4 TSRMLS_CC);
+	libev_register_implements(timer_event_ce, event_ce TSRMLS_CC);
+	timer_event_ce->create_object = event_create_handler;
 	
 	
 	// libev\EventLoop
