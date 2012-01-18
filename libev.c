@@ -342,9 +342,9 @@ PHP_METHOD(IOEvent, __construct)
  * Creates a timer event which will occur approximately after $after seconds
  * and after that will repeat with an approximate interval of $repeat.
  * 
+ * @param  callback
  * @param  double    Time before first triggering, seconds
  * @param  double    Time between repeats, seconds, Default: 0 = no repeat
- * @param  callback
  */
 PHP_METHOD(TimerEvent, __construct)
 {
@@ -426,18 +426,19 @@ PHP_METHOD(TimerEvent, getAfter)
  * in time.
  * 
  * There are two variants of PeriodicEvents:
- * * absolute timer (offset = absolute time, interval = 0)
+ * * Absolute timer (offset = absolute time, interval = 0)
  *   In this configuration the watcher triggers an event after the wall clock
  *   time offset has passed. It will not repeat and will not adjust when a time
  *   jump occurs, that is, if it is to be run at January 1st 2011 then it will be
  *   stopped and invoked when the system clock reaches or surpasses this point in time.
  * 
- * * repeating interval timer (offset = offset within interval, interval > 0)
+ * * Repeating interval timer (offset = offset within interval, interval > 0)
  *   In this mode the watcher will always be scheduled to time out at the next
  *   offset + N * interval time (for some integer N, which can also be negative)
  *   and then repeat, regardless of any time jumps. The offset argument is merely
  *   an offset into the interval periods.
  * 
+ * @param  callback
  * @param  double  The offset value
  * @param  double  the interval value, Default = 0, no repeat
  */
@@ -650,6 +651,7 @@ PHP_METHOD(EventLoop, getDepth)
 
 /**
  * Returns the time the current loop iteration received events.
+ * Seconds in libev.
  * 
  * @return double
  * @return false  if object is not initialized
@@ -787,12 +789,12 @@ PHP_METHOD(EventLoop, breakLoop)
  * @param  double  time in seconds
  * @return boolean  false if object is not initialized
  */
-PHP_METHOD(EventLoop, setIoCollectInterval)
+PHP_METHOD(EventLoop, setIOCollectInterval)
 {
 	double interval = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &interval) != SUCCESS) {
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &interval) != SUCCESS) {
 		return;
 	}
 	
@@ -834,7 +836,16 @@ PHP_METHOD(EventLoop, getPendingCount)
 		RETURN_STRING(#type, 1);                                                \
 	}
 
-
+/**
+ * Adds the event to the event loop.
+ * 
+ * **NOTE:** Right now you have to see to it so the Event instance won't be
+ * garbage collected, this will be fixed soon. (If they are garbage collected,
+ * PHP will crash with an assert failure.)
+ * 
+ * @param  Event
+ * @return boolean
+ */
 PHP_METHOD(EventLoop, add)
 {
 	zval *event_obj;
@@ -866,6 +877,12 @@ PHP_METHOD(EventLoop, add)
 	RETURN_BOOL(0);
 }
 
+/**
+ * Removes the event from the event loop, will skip all pending events on it too.
+ * 
+ * @param  Event
+ * @return boolean
+ */
 PHP_METHOD(EventLoop, remove)
 {
 	zval *event_obj;
@@ -943,7 +960,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, resume, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, run, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, breakLoop, NULL, ZEND_ACC_PUBLIC)
-	ZEND_ME(EventLoop, setIoCollectInterval, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, setIOCollectInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, add, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
