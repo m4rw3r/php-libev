@@ -811,6 +811,34 @@ PHP_METHOD(EventLoop, setIOCollectInterval)
 }
 
 /**
+ * Sets the time libev spends waiting for new timer events between loop iterations,
+ * default 0.
+ * 
+ * @param  double  time in seconds
+ * @return boolean
+ */
+PHP_METHOD(EventLoop, setTimeoutCollectInterval)
+{
+	double interval = 0;
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &interval) != SUCCESS) {
+		return;
+	}
+	
+	IF_DEBUG(assert(obj->loop));
+	
+	if(obj->loop)
+	{
+		ev_set_timeout_collect_interval(obj->loop, interval);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
  * Returns the number of pending events.
  * 
  * @return int
@@ -961,6 +989,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, run, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, breakLoop, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, setIOCollectInterval, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, setTimeoutCollectInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, add, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
