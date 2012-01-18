@@ -230,6 +230,45 @@ PHP_METHOD(TimerEvent, __construct)
 	ev_timer_init((ev_timer *)obj->watcher, event_callback, after, repeat);
 }
 
+/**
+ * Returns the seconds between event triggering.
+ * 
+ * @return double
+ * @return false   If the event has not been initialized
+ */
+PHP_METHOD(TimerEvent, getRepeat)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(((ev_timer *)obj->watcher)->repeat);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Returns the time from the loop start until the first triggering of this TimerEvent.
+ * 
+ * @return double
+ * @return false   If the event has not been initialized
+ */
+PHP_METHOD(TimerEvent, getAfter)
+{
+	// TODO: Not sure if this is a good idea, ev_timer->at is marked as private in ev.h
+	
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(((ev_timer *)obj->watcher)->at);
+	}
+	
+	RETURN_BOOL(0);
+}
+	
+
 // TODO: implement support for ev_timer_again(loop, ev_timer*) ?
 // TODO: implement support for ev_timer_remaining(loop, ev_timer*) ?
 
@@ -528,6 +567,8 @@ static const function_entry io_event_methods[] = {
 
 static const function_entry timer_event_methods[] = {
 	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	ZEND_ME(TimerEvent, getRepeat, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(TimerEvent, getAfter, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
