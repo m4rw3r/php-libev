@@ -23,6 +23,7 @@ zend_class_entry *event_ce;
 zend_class_entry *io_event_ce;
 zend_class_entry *timer_event_ce;
 zend_class_entry *periodic_event_ce;
+zend_class_entry *signal_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -121,14 +122,107 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	return retval;
 }
 
+/**
+ * Generic event callback which will call the associated PHP callback.
+ */
 static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 {
 	zval retval;
 	
-	if(call_user_function(EG(function_table), NULL, ((event_object *)w->data)->callback, &retval, 0, NULL TSRMLS_CC) == SUCCESS)
+	if(((event_object *)w->data)->callback)
 	{
-		zval_dtor(&retval);
+		if(call_user_function(EG(function_table), NULL, ((event_object *)w->data)->callback, &retval, 0, NULL TSRMLS_CC) == SUCCESS)
+		{
+			zval_dtor(&retval);
+		}
 	}
+}
+
+
+PHP_METHOD(Event, __construct)
+{
+	// Intentionally left empty
+}
+
+/**
+ * Returns true if the event is active, ie. associated with an event loop.
+ * 
+ * @return boolean
+ * @return null  If the watcher is uninitialized
+ */
+PHP_METHOD(Event, isActive)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	IF_DEBUG(assert(obj->watcher));
+	
+	if(obj->watcher)
+	{
+		RETURN_BOOL(ev_is_active(obj->watcher));
+	}
+	
+	RETURN_NULL();
+}
+
+/**
+ * Returns true if the event watcher is pending (ie. it has outstanding events but
+ * the callback has not been called yet).
+ * 
+ * TODO: Investigate what happens if we free obj->watcher while is_pending is true,
+ *       the lbev manual says it is a bad idea
+ * 
+ * @return boolean
+ * @return null  If the watcher is uninitialized
+ */
+PHP_METHOD(Event, isPending)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	IF_DEBUG(assert(obj->watcher));
+	
+	if(obj->watcher)
+	{
+		RETURN_BOOL(ev_is_pending(obj->watcher));
+	}
+	
+	RETURN_NULL();
+}
+
+/**
+ * Replaces the PHP callback on an event.
+ * 
+ * @return void
+ */
+PHP_METHOD(Event, setCallback)
+{
+	event_object *obj;
+	zval *zcallback = NULL;
+	char *func_name;
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &zcallback) != SUCCESS) {
+		return;
+	}
+	
+	if( ! zend_is_callable(zcallback, 0, &func_name TSRMLS_CC))
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
+		efree(func_name);
+		RETURN_FALSE;
+	}
+	efree(func_name);
+	
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	IF_DEBUG(assert(obj->callback));
+	
+	// Destroy existing callback reference
+	if(obj->callback)
+	{
+		zval_ptr_dtor(&obj->callback);
+	}
+	
+	zval_add_ref(&zcallback);
+	obj->callback = zcallback;
 }
 
 
@@ -408,6 +502,35 @@ PHP_METHOD(PeriodicEvent, setInterval)
 // TODO: Implement ev_periodic_again(loop, ev_periodic *) ?
 
 
+PHP_METHOD(SignalEvent, __construct)
+{
+	long signal;
+	zval *callback;
+	char *func_name;
+	event_object *obj;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &signal, &callback) != SUCCESS) {
+		return;
+	}
+
+	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
+		efree(func_name);
+		RETURN_FALSE;
+	}
+	efree(func_name);
+	
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	zval_add_ref(&callback);
+	obj->callback = callback;
+
+	obj->watcher = emalloc(sizeof(ev_signal));
+	obj->watcher->data = obj;
+	ev_signal_init((ev_signal *)obj->watcher, event_callback, (int) signal);
+}
+
+
 /**
  * Notifies libev that a fork might have been done and forces it
  * to reinitialize kernel state where needed on the next loop iteration.
@@ -629,6 +752,14 @@ PHP_METHOD(EventLoop, getPendingCount)
 	RETURN_BOOL(0);
 }
 
+#define ev_watcher_action(action, type)     if(object_ce == type##_event_ce)    \
+	{                                                                           \
+		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
+		                                                                        \
+		RETURN_STRING(#type, 1);                                                \
+	}
+
+
 PHP_METHOD(EventLoop, add)
 {
 	zval *event_obj;
@@ -640,56 +771,89 @@ PHP_METHOD(EventLoop, add)
 		return;
 	}
 	
-	object_ce = zend_get_class_entry(event_obj);
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
-	// TODO: Validate that the Event object has not already been associated with an EventLoop
 	
-	if(object_ce == io_event_ce)
+	if(loop_obj->loop && event->watcher)
 	{
-		ev_io_start(loop_obj->loop, (ev_io *)event->watcher);
+		// TODO: Validate that the Event object has not already been associated with an EventLoop
+		object_ce = zend_get_class_entry(event_obj);
 		
-		RETURN_STRING("IOEvent", 1);
-	}
-	else if(object_ce == timer_event_ce)
-	{
-		ev_timer_start(loop_obj->loop, (ev_timer *)event->watcher);
+		ev_watcher_action(start, io)
+		else ev_watcher_action(start, timer)
+		else ev_watcher_action(start, periodic)
 		
-		RETURN_STRING("TimerEvent", 1);
-	}
-	else if(object_ce == periodic_event_ce)
-	{
-		ev_periodic_start(loop_obj->loop, (ev_periodic *)event->watcher);
-		
-		RETURN_STRING("PeriodicEvent", 1);
+		RETURN_STRING("UNKNOWN", 1);
 	}
 	
-	RETURN_STRING("UNKNOWN", 1);
+	RETURN_BOOL(0);
 }
+
+PHP_METHOD(EventLoop, remove)
+{
+	zval *event_obj;
+	event_object *event;
+	zend_class_entry *object_ce;
+	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
+		return;
+	}
+	
+	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
+	
+	IF_DEBUG(assert(loop_obj->loop));
+	IF_DEBUG(assert(event->watcher));
+	
+	if(loop_obj->loop && event->watcher)
+	{
+		object_ce = zend_get_class_entry(event_obj);
+		
+		ev_watcher_action(stop, io)
+		else ev_watcher_action(stop, timer)
+		else ev_watcher_action(stop, periodic)
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+#undef ev_watcher_action
 
 
 static const function_entry event_methods[] = {
+	// Abstract __construct makes the class abstract
+	ZEND_ME(Event, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_ABSTRACT)
+	ZEND_ME(Event, isActive, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(Event, isPending, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(Event, setCallback, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
 static const function_entry io_event_methods[] = {
-	ZEND_ME(IOEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	ZEND_ME(IOEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
 static const function_entry timer_event_methods[] = {
-	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(TimerEvent, getRepeat, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(TimerEvent, getAfter, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
 static const function_entry periodic_event_methods[] = {
-	ZEND_ME(PeriodicEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	ZEND_ME(PeriodicEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(PeriodicEvent, getTime, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getOffset, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, setInterval, NULL, ZEND_ACC_PUBLIC)
+	{NULL, NULL, NULL}
+};
+
+static const function_entry signal_event_methods[] = {
+	ZEND_ME(SignalEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
@@ -705,6 +869,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, setIoCollectInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, add, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -720,51 +885,49 @@ static void libev_register_implements(zend_class_entry *class_entry, zend_class_
 
 PHP_MINIT_FUNCTION(libev)
 {
+	zend_class_entry ce;
 	// Init generic object handlers for Event objects, prevent clone
 	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_object_handlers.clone_obj = NULL;
 	
 	
-	// libev\Event interface
-	zend_class_entry ce;
+	// libev\Event abstract
 	INIT_CLASS_ENTRY(ce, "libev\\Event", event_methods);
-	event_ce = zend_register_internal_interface(&ce TSRMLS_CC);
+	event_ce = zend_register_internal_class(&ce TSRMLS_CC);
+	event_ce->create_object = event_create_handler;
 	
 	
 	// libev\IOEvent
-	zend_class_entry ce3;
-	INIT_CLASS_ENTRY(ce3, "libev\\IOEvent", io_event_methods);
-	io_event_ce = zend_register_internal_class(&ce3 TSRMLS_CC);
-	libev_register_implements(io_event_ce, event_ce TSRMLS_CC);
-	
+	INIT_CLASS_ENTRY(ce, "libev\\IOEvent", io_event_methods);
+	io_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	// Override default object creation
 	io_event_ce->create_object = event_create_handler;
-	
-	// IOEvent constants
+	// Constants
 	zend_declare_class_constant_long(io_event_ce, "READ", sizeof("READ") - 1, EV_READ TSRMLS_CC);
 	zend_declare_class_constant_long(io_event_ce, "WRITE", sizeof("WRITE") - 1, EV_WRITE TSRMLS_CC);
 	
 	
 	// libev\TimerEvent
-	zend_class_entry ce4;
-	INIT_CLASS_ENTRY(ce4, "libev\\TimerEvent", timer_event_methods);
-	timer_event_ce = zend_register_internal_class(&ce4 TSRMLS_CC);
-	libev_register_implements(timer_event_ce, event_ce TSRMLS_CC);
+	INIT_CLASS_ENTRY(ce, "libev\\TimerEvent", timer_event_methods);
+	timer_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	timer_event_ce->create_object = event_create_handler;
 	
 	
 	// libev\PeriodicEvent
-	zend_class_entry ce5;
-	INIT_CLASS_ENTRY(ce5, "libev\\PeriodicEvent", periodic_event_methods);
-	periodic_event_ce = zend_register_internal_class(&ce5 TSRMLS_CC);
-	libev_register_implements(periodic_event_ce, event_ce TSRMLS_CC);
+	INIT_CLASS_ENTRY(ce, "libev\\PeriodicEvent", periodic_event_methods);
+	periodic_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	periodic_event_ce->create_object = event_create_handler;
 	
 	
+	// libev\SignalEvent
+	INIT_CLASS_ENTRY(ce, "libev\\SignalEvent", signal_event_methods);
+	signal_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	signal_event_ce->create_object = event_create_handler;
+	
+	
 	// libev\EventLoop
-	zend_class_entry ce2;
-	INIT_CLASS_ENTRY(ce2, "libev\\EventLoop", event_loop_methods);
-	event_loop_ce = zend_register_internal_class(&ce2 TSRMLS_CC);
+	INIT_CLASS_ENTRY(ce, "libev\\EventLoop", event_loop_methods);
+	event_loop_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	
 	// Override default object handlers so we can use custom struct
 	event_loop_ce->create_object = event_loop_create_handler;
