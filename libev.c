@@ -22,6 +22,7 @@ ZEND_GET_MODULE(libev)
 zend_class_entry *event_ce;
 zend_class_entry *io_event_ce;
 zend_class_entry *timer_event_ce;
+zend_class_entry *periodic_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -140,7 +141,6 @@ PHP_METHOD(IOEvent, __construct)
 	event_object *obj;
 	php_stream *stream;
 	php_socket *php_sock;
-	zval *object = getThis();
 	
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lZz", &events, &fd, &zcallback) != SUCCESS) {
 		return;
@@ -183,7 +183,7 @@ PHP_METHOD(IOEvent, __construct)
 	}
 	efree(func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(object TSRMLS_CC);
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&zcallback);
 	obj->callback = zcallback;
 	
@@ -192,12 +192,13 @@ PHP_METHOD(IOEvent, __construct)
 	ev_io_init((ev_io *)obj->watcher, event_callback, (int)file_desc, (int)events);
 }
 
+
 /**
  * Creates a timer event which will occur approximately after $after seconds
  * and after that will repeat with an approximate interval of $repeat.
  * 
- * @param  double
- * @param  double    Default: 0 = no repeat
+ * @param  double    Time before first triggering, seconds
+ * @param  double    Time between repeats, seconds, Default: 0 = no repeat
  * @param  callback
  */
 PHP_METHOD(TimerEvent, __construct)
@@ -207,7 +208,6 @@ PHP_METHOD(TimerEvent, __construct)
 	zval *callback;
 	char *func_name;
 	event_object *obj;
-	zval *object = getThis();
 	
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
 		return;
@@ -221,7 +221,7 @@ PHP_METHOD(TimerEvent, __construct)
 	}
 	efree(func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(object TSRMLS_CC);
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
 	obj->callback = callback;
 	
@@ -271,6 +271,134 @@ PHP_METHOD(TimerEvent, getAfter)
 
 // TODO: implement support for ev_timer_again(loop, ev_timer*) ?
 // TODO: implement support for ev_timer_remaining(loop, ev_timer*) ?
+
+/**
+ * Schedules an event (or a repeating series of events) at a specific point
+ * in time.
+ * 
+ * There are two variants of PeriodicEvents:
+ * * absolute timer (offset = absolute time, interval = 0)
+ *   In this configuration the watcher triggers an event after the wall clock
+ *   time offset has passed. It will not repeat and will not adjust when a time
+ *   jump occurs, that is, if it is to be run at January 1st 2011 then it will be
+ *   stopped and invoked when the system clock reaches or surpasses this point in time.
+ * 
+ * * repeating interval timer (offset = offset within interval, interval > 0)
+ *   In this mode the watcher will always be scheduled to time out at the next
+ *   offset + N * interval time (for some integer N, which can also be negative)
+ *   and then repeat, regardless of any time jumps. The offset argument is merely
+ *   an offset into the interval periods.
+ * 
+ * @param  double  The offset value
+ * @param  double  the interval value, Default = 0, no repeat
+ */
+PHP_METHOD(PeriodicEvent, __construct)
+{
+	double after;
+	double repeat = 0.;
+	zval *callback;
+	char *func_name;
+	event_object *obj;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
+		return;
+	}
+
+	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
+		efree(func_name);
+		RETURN_FALSE;
+	}
+	efree(func_name);
+
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	zval_add_ref(&callback);
+	obj->callback = callback;
+
+	obj->watcher = emalloc(sizeof(ev_periodic));
+	obj->watcher->data = obj;
+	ev_periodic_init((ev_periodic *)obj->watcher, event_callback, after, repeat, 0);
+}
+
+/**
+ * Returns the time for the next trigger of the event, seconds.
+ * 
+ * @return float
+ */
+PHP_METHOD(PeriodicEvent, getTime)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(ev_periodic_at((ev_periodic *)obj->watcher));
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * When repeating, returns the offset, otherwise it returns the absolute time for
+ * the event trigger.
+ * 
+ * @return float
+ */
+PHP_METHOD(PeriodicEvent, getOffset)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(((ev_periodic *)obj->watcher)->offset);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * When repeating, returns the current interval value.
+ * 
+ * @return float
+ */
+PHP_METHOD(PeriodicEvent, getInterval)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(((ev_periodic *)obj->watcher)->interval);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Sets the interval value, changes only take effect when the event has fired.
+ * 
+ * @return boolean
+ */
+PHP_METHOD(PeriodicEvent, setInterval)
+{
+	double interval;
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &interval) != SUCCESS) {
+		return;
+	}
+	
+	if(obj->watcher)
+	{
+		((ev_periodic *)obj->watcher)->interval = interval;
+		
+		RETURN_BOOL(1)
+	}
+	
+	RETURN_BOOL(0);
+}
+
+// TODO: Implement ev_periodic_again(loop, ev_periodic *) ?
+
 
 /**
  * Notifies libev that a fork might have been done and forces it
@@ -551,6 +679,12 @@ PHP_METHOD(EventLoop, add)
 		
 		RETURN_STRING("TimerEvent", 1);
 	}
+	else if(object_ce == periodic_event_ce)
+	{
+		ev_periodic_start(loop_obj->loop, (ev_periodic *)event->watcher);
+		
+		RETURN_STRING("PeriodicEvent", 1);
+	}
 	
 	RETURN_STRING("UNKNOWN", 1);
 }
@@ -569,6 +703,15 @@ static const function_entry timer_event_methods[] = {
 	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
 	ZEND_ME(TimerEvent, getRepeat, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(TimerEvent, getAfter, NULL, ZEND_ACC_PUBLIC)
+	{NULL, NULL, NULL}
+};
+
+static const function_entry periodic_event_methods[] = {
+	ZEND_ME(PeriodicEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	ZEND_ME(PeriodicEvent, getTime, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(PeriodicEvent, getOffset, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(PeriodicEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(PeriodicEvent, setInterval, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -630,6 +773,14 @@ PHP_MINIT_FUNCTION(libev)
 	timer_event_ce = zend_register_internal_class(&ce4 TSRMLS_CC);
 	libev_register_implements(timer_event_ce, event_ce TSRMLS_CC);
 	timer_event_ce->create_object = event_create_handler;
+	
+	
+	// libev\PeriodicEvent
+	zend_class_entry ce5;
+	INIT_CLASS_ENTRY(ce5, "libev\\PeriodicEvent", periodic_event_methods);
+	periodic_event_ce = zend_register_internal_class(&ce5 TSRMLS_CC);
+	libev_register_implements(periodic_event_ce, event_ce TSRMLS_CC);
+	periodic_event_ce->create_object = event_create_handler;
 	
 	
 	// libev\EventLoop
