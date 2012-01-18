@@ -73,6 +73,35 @@ timer and the uppercase echo.
   $loop->add($time);
   $loop->run();
 
+Periodically switching off events::
+
+  $loop = new libev\EventLoop();
+
+  $period1 = new libev\TimerEvent(function()
+  {
+  	echo "Fast\n";
+  }, .1, .5);
+
+  $period2 = new libev\TimerEvent(function() use($period1, $loop)
+  {
+      if($period1->isActive())
+      {
+          echo "Fast off\n";
+          $loop->remove($period1);
+      }
+      else
+      {
+          echo "Fast on\n";
+          $loop->add($period1);
+      }
+  }, 3, 3);
+  
+  $loop->add($period1);
+  $loop->add($period2);
+  
+  $loop->run();
+
+
 Interface
 =========
 
@@ -117,21 +146,21 @@ is called or no more events are associated with this loop by default.
 
 libev ``flag``:
 
- * int(0)
-   
-   run() handles events until there are no events to handle
-   
- * ``EventLoop::RUN_NOWAIT``
-   
-   run() looks for new events, handles them and
-   then return after one iteration of the loop
-   
- * ``EventLoop::RUN_ONCE``
-   
-   run() looks for new events (wait if necessary)
-   and will handle those and any outstanding ones. It will block until
-   at least one event has arrived and will return after one iteration of
-   the loop
+* int(0)
+  
+  run() handles events until there are no events to handle
+  
+* ``EventLoop::RUN_NOWAIT``
+  
+  run() looks for new events, handles them and
+  then return after one iteration of the loop
+  
+* ``EventLoop::RUN_ONCE``
+  
+  run() looks for new events (wait if necessary)
+  and will handle those and any outstanding ones. It will block until
+  at least one event has arrived and will return after one iteration of
+  the loop
 
 **boolean EventLoop::breakLoop(flag = EventLoop::BREAK_ONE)**
 
@@ -139,12 +168,17 @@ Breaks the current event loop after it has processed all outstanding events.
 
 libev break flag:
 
- * ``EventLoop::BREAK_ONE``:    will break the innermost loop, default behaviour
- * ``EventLoop::BREAK_ALL``:    will break all the currently running loops
+* ``EventLoop::BREAK_ONE``:    will break the innermost loop, default behaviour
+* ``EventLoop::BREAK_ALL``:    will break all the currently running loops
 
 **boolean EventLoop::setIOCollectInterval(double = 0)**
 
-Sets the time libev spends waiting for new IO events between loop iterations,
+Sets the time libev spends sleeping for new IO events between loop iterations,
+seconds.
+
+**boolean EventLoop::setTimeoutCollectInterval(double = 0)**
+
+Sets the time libev spends sleeping for new timeout events between loop iterations,
 seconds.
 
 **int EventLoop::getPendingCount()**
@@ -222,17 +256,17 @@ Schedules an event (or a repeating series of events) at a specific point in time
 
 **PeriodicEvent::__construct(callback, double offset, double interval = 0)**
 
- * Absolute timer (``offset`` = absolute time, ``interval`` = 0)
-   In this configuration the watcher triggers an event after the wall clock
-   time offset has passed. It will not repeat and will not adjust when a time
-   jump occurs, that is, if it is to be run at January 1st 2011 then it will be
-   stopped and invoked when the system clock reaches or surpasses this point in time.
-   
- * Repeating interval timer (``offset`` = offset within interval, ``interval`` > 0)
-   In this mode the watcher will always be scheduled to time out at the next
-   ``offset`` + N * ``interval`` time (for some integer N, which can also be negative)
-   and then repeat, regardless of any time jumps. The ``offset`` argument is merely
-   an offset into the interval periods.
+* Absolute timer (``offset`` = absolute time, ``interval`` = 0)
+  In this configuration the watcher triggers an event after the wall clock
+  time offset has passed. It will not repeat and will not adjust when a time
+  jump occurs, that is, if it is to be run at January 1st 2011 then it will be
+  stopped and invoked when the system clock reaches or surpasses this point in time.
+  
+* Repeating interval timer (``offset`` = offset within interval, ``interval`` > 0)
+  In this mode the watcher will always be scheduled to time out at the next
+  ``offset`` + N * ``interval`` time (for some integer N, which can also be negative)
+  and then repeat, regardless of any time jumps. The ``offset`` argument is merely
+  an offset into the interval periods.
 
 **double PeriodicEvent::getTime()**
 
