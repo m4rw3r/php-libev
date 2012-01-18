@@ -1,3 +1,5 @@
+
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -229,6 +231,7 @@ PHP_METHOD(TimerEvent, __construct)
 }
 
 // TODO: implement support for ev_timer_again(loop, ev_timer*) ?
+// TODO: implement support for ev_timer_remaining(loop, ev_timer*) ?
 
 /**
  * Notifies libev that a fork might have been done and forces it
@@ -295,11 +298,6 @@ PHP_METHOD(EventLoop, getDepth)
 	RETURN_BOOL(0);
 }
 
-static void timecallback(struct ev_loop *loop, ev_timer *w, int revents)
-{
-	php_printf("Timer!");
-}
-
 /**
  * Returns the time the current loop iteration received events.
  * 
@@ -308,13 +306,6 @@ static void timecallback(struct ev_loop *loop, ev_timer *w, int revents)
  */
 PHP_METHOD(EventLoop, now)
 {
-	struct ev_loop *loop = ev_loop_new(EVFLAG_AUTO);
-	ev_timer *timer = emalloc(sizeof(ev_timer));
-	ev_timer_init(timer, timecallback, 2., 1.);
-	ev_timer_start(loop, timer);
-	ev_run(loop, 0);
-	
-	/*
 	struct ev_loop *loop;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -325,7 +316,7 @@ PHP_METHOD(EventLoop, now)
 		RETURN_DOUBLE(ev_now(loop));
 	}
 	
-	RETURN_BOOL(0);*/
+	RETURN_BOOL(0);
 }
 
 /**
@@ -406,8 +397,6 @@ PHP_METHOD(EventLoop, run)
 	
 	if(loop != NULL)
 	{
-		php_printf("Pending: %d\n", ev_pending_count(loop));
-		
 		ev_run(loop, (int)how);
 		
 		RETURN_BOOL(1);
@@ -508,6 +497,8 @@ PHP_METHOD(EventLoop, add)
 	
 	object_ce = zend_get_class_entry(event_obj);
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
+	
+	// TODO: Validate that the Event object has not already been associated with an EventLoop
 	
 	if(object_ce == io_event_ce)
 	{
@@ -625,8 +616,7 @@ static PHP_MINFO_FUNCTION(libev)
 	char version[64];
 	
 	php_info_print_table_start();
-	php_info_print_table_header(2, "libev support", "enabled");
-	php_info_print_table_row(2, "extension version", PHP_LIBEV_EXTVER);
+	php_info_print_table_row(2, "Extension version", PHP_LIBEV_EXTVER);
 	
 	snprintf(version, sizeof(version) -1, "%d.%d", ev_version_major(), ev_version_minor());
 	php_info_print_table_row(2, "libev version", version);
