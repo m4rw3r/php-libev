@@ -6,6 +6,7 @@
 #  define IF_DEBUG(x) x
 #else
 #  define IF_DEBUG(x)
+#  define libev_printf(...)
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -48,13 +49,14 @@ zend_object_handlers event_loop_object_handlers;
 
 typedef struct event_object {
 	zend_object std;
-	zval *callback;
 	ev_watcher *watcher;
+	zval *callback;
 } event_object;
 
 typedef struct event_loop_object {
 	zend_object std;
 	struct ev_loop *loop;
+	zval *events;
 } event_loop_object;
 
 
@@ -123,6 +125,8 @@ void event_loop_free_storage(void *object TSRMLS_DC)
 		ev_loop_destroy(obj->loop);
 	}
 	
+	zval_ptr_dtor(&obj->events);
+	
 	zend_hash_destroy(obj->std.properties);
 	FREE_HASHTABLE(obj->std.properties);
 	
@@ -151,6 +155,10 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	obj->loop = ev_loop_new(EVFLAG_AUTO);
 	
 	IF_DEBUG(ev_verify(obj->loop));
+	
+	// Allocate internal hash for the associated Event objects
+	MAKE_STD_ZVAL(obj->events);
+	array_init(obj->events);
 	
 	retval.handle = zend_objects_store_put(obj, NULL, event_loop_free_storage, NULL TSRMLS_CC);
 	retval.handlers = &event_loop_object_handlers;
@@ -182,6 +190,9 @@ static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 }
 
 
+/**
+ * Empty abstract constructor for Event.
+ */
 PHP_METHOD(Event, __construct)
 {
 	// Intentionally left empty
@@ -860,8 +871,6 @@ PHP_METHOD(EventLoop, getPendingCount)
 #define ev_watcher_action(action, type)     if(object_ce == type##_event_ce)    \
 	{                                                                           \
 		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
-		                                                                        \
-		RETURN_STRING(#type, 1);                                                \
 	}
 
 /**
@@ -890,16 +899,29 @@ PHP_METHOD(EventLoop, add)
 	IF_DEBUG(assert(loop_obj->loop));
 	IF_DEBUG(assert(event->watcher));
 	
-	if(loop_obj->loop && event->watcher)
+	if(loop_obj->loop && event->watcher && ! ev_is_active(event->watcher))
 	{
-		// TODO: Validate that the Event object has not already been associated with an EventLoop
 		object_ce = zend_get_class_entry(event_obj);
 		
 		ev_watcher_action(start, io)
 		else ev_watcher_action(start, timer)
 		else ev_watcher_action(start, periodic)
 		
-		RETURN_STRING("UNKNOWN", 1);
+		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
+		
+		// Apply GC protection for the Event
+		zval_add_ref(&event_obj);
+		if(add_index_zval(loop_obj->events, (size_t) event->watcher, event_obj) == FAILURE)
+		{
+			IF_DEBUG(libev_printf("Could not add Event to internal hash\n"));
+			IF_DEBUG(assert(0));
+			
+			RETURN_BOOL(0);
+		}
+		
+		IF_DEBUG(libev_printf("postAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
+		
+		RETURN_BOOL(1);
 	}
 	
 	RETURN_BOOL(0);
@@ -927,13 +949,37 @@ PHP_METHOD(EventLoop, remove)
 	IF_DEBUG(assert(loop_obj->loop));
 	IF_DEBUG(assert(event->watcher));
 	
-	if(loop_obj->loop && event->watcher)
+	if(loop_obj->loop && event->watcher && ev_is_active(event->watcher))
 	{
+		IF_DEBUG(libev_printf("preRemove refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
+		
+		// Check that the event is associated with us
+		if(zend_hash_index_exists(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
+		{
+			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
+			IF_DEBUG(assert(0));
+			
+			RETURN_BOOL(0);
+		}
+		
 		object_ce = zend_get_class_entry(event_obj);
 		
 		ev_watcher_action(stop, io)
 		else ev_watcher_action(stop, timer)
 		else ev_watcher_action(stop, periodic)
+		
+		// Remove GC protection
+		// For some reason does zend_hash_index_del() decrease the zval refcount
+		// so no need to call zval_dtor
+		if(zend_hash_index_del(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
+		{
+			IF_DEBUG(libev_printf("Failed to remove Event from EventLoop internal hash\n"));
+			IF_DEBUG(assert(0));
+			
+			RETURN_BOOL(0);
+		}
+		
+		IF_DEBUG(libev_printf("postRemove refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
 		RETURN_BOOL(1);
 	}
