@@ -68,6 +68,7 @@ zend_class_entry *io_event_ce;
 zend_class_entry *timer_event_ce;
 zend_class_entry *periodic_event_ce;
 zend_class_entry *signal_event_ce;
+zend_class_entry *child_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -86,6 +87,9 @@ typedef struct event_loop_object {
 	struct ev_loop *loop;
 	zval *events;
 } event_loop_object;
+
+/* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
+zval *default_event_loop_object;
 
 
 void event_free_storage(void *object TSRMLS_DC)
@@ -180,11 +184,6 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	zend_hash_init(obj->std.properties, 0, NULL, ZVAL_PTR_DTOR, 0);
 	zend_hash_copy(obj->std.properties, &type->default_properties,
 	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
-	
-	/* TODO: Do we need to be able to change the parameter to ev_loop_new() here? */
-	obj->loop = ev_loop_new(EVFLAG_AUTO);
-	
-	IF_DEBUG(ev_verify(obj->loop));
 	
 	/* Allocate internal hash for the associated Event objects */
 	MAKE_STD_ZVAL(obj->events);
@@ -629,6 +628,155 @@ PHP_METHOD(SignalEvent, __construct)
 
 
 /**
+ * This event will be triggered on child status changes.
+ * 
+ * NOTE: Must be attached to the default loop (ie. the instance from
+ * EventLoop::getDefaultLoop())
+ * 
+ * @param  callback
+ * @param  int   PID, 0 if all children
+ * @param  boolean  If to also trigger on suspend/continue events and not just termination
+ */
+PHP_METHOD(ChildEvent, __construct)
+{
+	long pid;
+	zend_bool trace = 0;
+	zval *callback;
+	char *func_name;
+	event_object *obj;
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zl|b", &callback, &pid, &trace) != SUCCESS) {
+		return;
+	}
+
+	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
+		efree(func_name);
+		RETURN_FALSE;
+	}
+	efree(func_name);
+	
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	zval_add_ref(&callback);
+	obj->callback = callback;
+	
+	obj->watcher = emalloc(sizeof(ev_child));
+	obj->watcher->data = obj;
+	ev_child_init((ev_child *)obj->watcher, event_callback, (int)pid, (int)trace);
+}
+
+/**
+ * Returns the PID this event was registered for.
+ * 
+ * @return int
+ */
+PHP_METHOD(ChildEvent, getPid)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		RETURN_LONG(((ev_child *)obj->watcher)->pid);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Returns the PID for the last child triggering this event.
+ * 
+ * @return int
+ */
+PHP_METHOD(ChildEvent, getRPid)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		RETURN_LONG(((ev_child *)obj->watcher)->rpid);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Returns the exit/trace status (see waitpid and sys/wait.h) caused by the child
+ * ChildEvent::getRPid().
+ * 
+ * @return int
+ */
+PHP_METHOD(ChildEvent, getRStatus)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		RETURN_LONG(((ev_child *)obj->watcher)->rstatus);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+
+/**
+ * Normal constructor for EventLoop instance.
+ */
+PHP_METHOD(EventLoop, __construct)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	/* TODO: Do we need to be able to change the parameter to ev_loop_new() here? */
+	obj->loop = ev_loop_new(EVFLAG_AUTO);
+	
+	IF_DEBUG(ev_verify(obj->loop));
+}
+
+/**
+ * Returns the default event loop object, this object is a global singleton
+ * and it is not recommended to use it unless you require ChildEvent watchers
+ * as they can only be attached to the default loop.
+ * 
+ * @return EventLoop
+ */
+PHP_METHOD(EventLoop, getDefaultLoop)
+{
+	/* Singleton */
+	if( ! default_event_loop_object)
+	{
+		/* TODO: How do we deal with memory management here?
+		   Do we need to destroy the zval in some kind of extension shutdown? */
+		ALLOC_INIT_ZVAL(default_event_loop_object);
+		
+		/* Create object without calling constructor, we now have an EventLoop missing the ev_loop */
+		if(object_init_ex(default_event_loop_object, event_loop_ce) != SUCCESS) {
+			/* TODO: Error handling */
+			RETURN_BOOL(0);
+		
+			return;
+		}
+		
+		event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(default_event_loop_object TSRMLS_CC);
+		
+		assert( ! obj->loop);
+		
+		obj->loop = ev_default_loop(EVFLAG_AUTO);
+		
+		IF_DEBUG(ev_verify(obj->loop));
+		IF_DEBUG(libev_printf("Created default_event_loop_object\n"));
+	}
+	
+	/* Return copy, no destruct on our local zval */
+	RETURN_ZVAL(default_event_loop_object, 1, 0);
+}
+
+/**
  * Notifies libev that a fork might have been done and forces it
  * to reinitialize kernel state where needed on the next loop iteration.
  * 
@@ -940,6 +1088,20 @@ PHP_METHOD(EventLoop, add)
 		else ev_watcher_action(start, timer)
 		else ev_watcher_action(start, periodic)
 		else ev_watcher_action(start, signal)
+		else if(object_ce == child_event_ce)
+		{
+			/* Special logic, ev_child can only be attached to the default loop */
+			if( ! ev_is_default_loop(loop_obj->loop))
+			{
+				/* TODO: libev-specific exception class here */
+				zend_throw_exception(NULL, "libev\\ChildEvent can only be added to the default event-loop", 1 TSRMLS_DC);
+				
+				return;
+			}
+			
+			ev_child_start(loop_obj->loop, (ev_child *)event->watcher);
+			IF_DEBUG(libev_printf("Calling ev_child_start\n"));
+		}
 		
 		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
@@ -1003,6 +1165,7 @@ PHP_METHOD(EventLoop, remove)
 		else ev_watcher_action(stop, timer)
 		else ev_watcher_action(stop, periodic)
 		else ev_watcher_action(stop, signal)
+		else ev_watcher_action(stop, child)
 		
 		/* Remove GC protection */
 		/* For some reason does zend_hash_index_del() decrease the zval refcount
@@ -1063,7 +1226,17 @@ static const function_entry signal_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
+static const function_entry child_event_methods[] = {
+	ZEND_ME(ChildEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	ZEND_ME(ChildEvent, getPid, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(ChildEvent, getRPid, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(ChildEvent, getRStatus, NULL, ZEND_ACC_PUBLIC)
+	{NULL, NULL, NULL}
+};
+
 static const function_entry event_loop_methods[] = {
+	ZEND_ME(EventLoop, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	ZEND_ME(EventLoop, getDefaultLoop, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, notifyFork, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getIteration, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getDepth, NULL, ZEND_ACC_PUBLIC)
@@ -1121,6 +1294,11 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\SignalEvent", signal_event_methods);
 	signal_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	signal_event_ce->create_object = event_create_handler;
+	
+	/* libev\SignalEvent */
+	INIT_CLASS_ENTRY(ce, "libev\\ChildEvent", child_event_methods);
+	child_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	child_event_ce->create_object = event_create_handler;
 	
 	
 	/* libev\EventLoop */
