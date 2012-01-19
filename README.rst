@@ -101,6 +101,28 @@ Periodically switching off events::
   
   $loop->run();
 
+Combining ``libev\SignalEvent`` and ``libev\StatEvent``::
+
+  $loop = new libev\EventLoop();
+  
+  // Watch ./test for changes
+  $stat = new libev\StatEvent('./test', function() use(&$stat)
+  {
+      printf("%s changed\n", './test');
+      var_dump($stat->getAttr());
+  });
+  
+  $loop->add($stat);
+  
+  // Graceful shutdown on ^C
+  $loop->add(new libev\SignalEvent(libev\SignalEvent::SIGINT, function() use($loop)
+  {
+      echo "exiting\n";
+      $loop->breakLoop();
+  }));
+  
+  $loop->run();
+  
 
 Interface
 =========
@@ -339,5 +361,76 @@ Returns the PID of the child which caused the last event trigger.
 Returns the exit/trace status (see ``waitpid`` and ``sys/wait.h``) caused by the child
 ChildEvent::getRPid().
 
+``libev\StatEvent`` extends ``libev\Event``
+-------------------------------------------
+
+Watches a file system path for attribute changes, triggers when at least
+one attribute has been changed.
+
+The path does not need to exist, and the event will be triggered when the
+path starts to exist.
+
+The portable implementation of ev_stat is using the system stat() call
+to regularily poll the path for changes which is inefficient. But even
+with OS supported change notifications it can be resource-intensive if
+many StatEvent watchers are used.
+
+If inotify is supported and is compiled into libev that will be used instead
+of stat() where possible.
+
+**NOTE:**
+          When libev is doing the stat() call the loop will be blocked, so it
+          is not recommended to use it on network resources as there might be
+          a long delay (accoring to libev manual, it usually takes several
+          milliseconds on a network resource, in best cases)
+
+stat() system calls also only supports full-second resolution portably,
+meaning that if the time is the only thing which changes on the file
+several updates of it close in time might be missed because stat() still
+returns the same full second, unless the file changes in other ways too.
+
+One solution to this problem is to start a timer which triggers after
+roughly a one-second delay (recommended to be a bit grater than 1.0 seconds
+because Linux gettimeofday() might return a different time from time(),
+the libev manual recommends 1.02)
+
+**StatEvent::__construct(string file, callback, double interval = libev_default_stat_interval)**
+
+``interval`` is the minimum interval libev will check for file-changes,
+will automatically be set to the default value by libev if the supplied
+value is smaller than the default.
+
+**string StatEvent::getPath()**
+
+**double StatEvent::getInterval()**
+
+**array StatEvent::getAttr()**
+
+Returns a key => value list of the file attributes, all keys will be 0 if the
+event has not yet been triggered.
+
+The following attributes are supported:
+
+* dev
+* ino
+* mode
+* nlink
+* uid
+* gid
+* rdev
+* size
+* atime
+* mtime
+* ctime
+
+**NOTE:**
+          If nlink is 0, the file does not exist and the rest of the values
+          may be inaccurate as they might remain from the file which existed
+          during previous events.
+
+**array StatEvent::getPrev()**
+
+Returns the previous file attributes, all keys will be 0 if the
+event has not yet been triggered.
 
 .. _`PCNTL PHP Extension`: http://www.php.net/manual/en/book.pcntl.php

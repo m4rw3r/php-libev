@@ -715,7 +715,7 @@ PHP_METHOD(ChildEvent, getRStatus)
  * of stat() where possible.
  * 
  * NOTE: When libev is doing the stat() call the loop will be blocked, so it
- *       it is not recommended to use it on network resources as there might be
+ *       is not recommended to use it on network resources as there might be
  *       a long delay (accoring to libev manual, it usually takes several
  *       milliseconds on a network resource, in best cases)
  * 
@@ -881,10 +881,6 @@ PHP_METHOD(StatEvent, getPrev)
 	
 	RETURN_BOOL(0);
 }
-
-
-
-// TODO: Implement StatEvent::getAttr, getPrev
 
 
 /**
