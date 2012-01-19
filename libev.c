@@ -964,7 +964,8 @@ PHP_METHOD(EventLoop, add)
  * Removes the event from the event loop, will skip all pending events on it too.
  * 
  * @param  Event
- * @return boolean
+ * @return boolean  False if the Event is not associated with this EventLoop,
+ *                  can also be false if there is an error
  */
 PHP_METHOD(EventLoop, remove)
 {
@@ -990,7 +991,6 @@ PHP_METHOD(EventLoop, remove)
 		if(zend_hash_index_exists(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
-			assert(0);
 			
 			RETURN_BOOL(0);
 		}
@@ -1076,15 +1076,6 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
-
-
-static void libev_register_implements(zend_class_entry *class_entry, zend_class_entry *interface_entry TSRMLS_DC)
-{
-	zend_uint num_interfaces = ++class_entry->num_interfaces;
-
-	class_entry->interfaces = (zend_class_entry **) realloc(class_entry->interfaces, sizeof(zend_class_entry *) * num_interfaces);
-	class_entry->interfaces[num_interfaces - 1] = interface_entry;
-}
 
 
 PHP_MINIT_FUNCTION(libev)
@@ -1180,7 +1171,5 @@ zend_module_entry libev_module_entry = {
 	PHP_LIBEV_EXTVER,
 	STANDARD_MODULE_PROPERTIES
 };
-
-
 
 
