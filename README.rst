@@ -139,14 +139,14 @@ Resumes the event loop and all timers.
 
 **NOTE:** DO NOT CALL UNLESS YOU HAVE CALLED EventLoop->suspend() first!
 
-**boolean EventLoop::run(flag)**
+**boolean EventLoop::run(flag = 0)**
 
 Runs the event loop, processing all events, will block until EventLoop->break()
 is called or no more events are associated with this loop by default.
 
 libev ``flag``:
 
-* int(0)
+* int(``0``), default
   
   run() handles events until there are no events to handle
   
@@ -187,8 +187,11 @@ Returns the number of pending events.
 
 **boolean EventLoop::add(libev\Event)**
 
-Adds the event to the event loop. This will also protect them from garbage collection
-as long as they are active.
+Adds the event to the event loop.
+
+This method will increase the refcount on the supplied Event, protecting it
+from garbage collection. Refcount will be decreased on ``EventLoop::remove()`` or
+when the EventLoop object is Garbage Collected.
 
 **boolean EventLoop::remove(libev\Event)**
 
