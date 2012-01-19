@@ -601,12 +601,12 @@ PHP_METHOD(PeriodicEvent, setInterval)
 
 PHP_METHOD(SignalEvent, __construct)
 {
-	long signal;
+	long signo;
 	zval *callback;
 	char *func_name;
 	event_object *obj;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &signal, &callback) != SUCCESS) {
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &signo, &callback) != SUCCESS) {
 		return;
 	}
 
@@ -624,7 +624,7 @@ PHP_METHOD(SignalEvent, __construct)
 
 	obj->watcher = emalloc(sizeof(ev_signal));
 	obj->watcher->data = obj;
-	ev_signal_init((ev_signal *)obj->watcher, event_callback, (int) signal);
+	ev_signal_init((ev_signal *)obj->watcher, event_callback, (int) signo);
 }
 
 
@@ -903,6 +903,7 @@ PHP_METHOD(EventLoop, getPendingCount)
 #define ev_watcher_action(action, type)     if(object_ce == type##_event_ce)    \
 	{                                                                           \
 		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
+		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));           \
 	}
 
 /**
@@ -938,6 +939,7 @@ PHP_METHOD(EventLoop, add)
 		ev_watcher_action(start, io)
 		else ev_watcher_action(start, timer)
 		else ev_watcher_action(start, periodic)
+		else ev_watcher_action(start, signal)
 		
 		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
@@ -1000,6 +1002,7 @@ PHP_METHOD(EventLoop, remove)
 		ev_watcher_action(stop, io)
 		else ev_watcher_action(stop, timer)
 		else ev_watcher_action(stop, periodic)
+		else ev_watcher_action(stop, signal)
 		
 		/* Remove GC protection */
 		/* For some reason does zend_hash_index_del() decrease the zval refcount

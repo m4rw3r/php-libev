@@ -39,7 +39,7 @@ if test "$PHP_LIBEV" != "no"; then
   [
     PHP_ADD_LIBRARY_WITH_PATH($LIBNAME, $LIBEV_DIR/$PHP_LIBDIR, LIBEV_SHARED_LIBADD)
   ],[
-    AC_MSG_ERROR([wrong libevent version {1.4.+ is required} or lib not found])
+    AC_MSG_ERROR([libev not found])
   ],[
     -L$LIBEV_DIR/$PHP_LIBDIR 
   ])
