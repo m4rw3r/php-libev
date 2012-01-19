@@ -300,7 +300,14 @@ Sets the interval value, changes only take effect when the event has fired.
 
 **SignalEvent::__construct(signal, callback)**
 
-``signal`` is a `pcntl PHP Extension`_ signal constant.
+``signal`` is a ``SignalEvent`` constant, the presense or absense of some of
+the constants match the presense or absense of them in the system's ``signal.h``
+header.
+
+For now, you can use this code to see which constans are defined::
+
+  $class = new ReflectionClass('libev\\SignalEvent'));
+  var_dump($class->getConstants());
 
 ``libev\ChildEvent`` extends ``libev\Event``
 --------------------------------------------
