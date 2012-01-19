@@ -49,6 +49,7 @@
 #include "php_libev.h"
 
 #include <ev.h>
+#include <signal.h>
 
 /* Override PHP's default debugging behaviour
    if we only want to debug this extension */
@@ -1050,8 +1051,8 @@ PHP_METHOD(EventLoop, getPendingCount)
 
 #define ev_watcher_action(action, type)     if(object_ce == type##_event_ce)    \
 	{                                                                           \
-		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
 		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));           \
+		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
 	}
 
 /**
@@ -1294,8 +1295,59 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\SignalEvent", signal_event_methods);
 	signal_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	signal_event_ce->create_object = event_create_handler;
+	/* Constants */
+#   define signal_constant(name)  zend_declare_class_constant_long(signal_event_ce, #name, sizeof(#name) - 1, (long) name TSRMLS_CC)
+	signal_constant(SIGHUP);
+	signal_constant(SIGINT);
+	signal_constant(SIGQUIT);
+	signal_constant(SIGILL);
+	signal_constant(SIGTRAP);
+	signal_constant(SIGABRT);
+#   ifdef SIGIOT
+		signal_constant(SIGIOT);
+#   endif
+	signal_constant(SIGBUS);
+	signal_constant(SIGFPE);
+	signal_constant(SIGKILL);
+	signal_constant(SIGUSR1);
+	signal_constant(SIGSEGV);
+	signal_constant(SIGUSR2);
+	signal_constant(SIGPIPE);
+	signal_constant(SIGALRM);
+	signal_constant(SIGTERM);
+#   ifdef SIGSTKFLT
+		signal_constant(SIGSTKFLT);
+#   endif 
+#   ifdef SIGCLD
+		signal_constant(SIGCLD);
+#   endif
+#   ifdef SIGCHLD
+		signal_constant(SIGCHLD);
+#   endif
+	signal_constant(SIGCONT);
+	signal_constant(SIGSTOP);
+	signal_constant(SIGTSTP);
+	signal_constant(SIGTTIN);
+	signal_constant(SIGTTOU);
+	signal_constant(SIGURG);
+	signal_constant(SIGXCPU);
+	signal_constant(SIGXFSZ);
+	signal_constant(SIGVTALRM);
+	signal_constant(SIGPROF);
+	signal_constant(SIGWINCH);
+#   ifdef SIGPOLL
+		signal_constant(SIGPOLL);
+#   endif
+	signal_constant(SIGIO);
+#   ifdef SIGPWR
+		signal_constant(SIGPWR);
+#   endif
+#   ifdef SIGSYS
+		signal_constant(SIGSYS);
+#   endif
+#   undef signal_constant
 	
-	/* libev\SignalEvent */
+	/* libev\ChildEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\ChildEvent", child_event_methods);
 	child_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	child_event_ce->create_object = event_create_handler;
@@ -1311,10 +1363,10 @@ PHP_MINIT_FUNCTION(libev)
 	event_loop_object_handlers.clone_obj = NULL;
 	
 	/* EventLoop class constants */
-	zend_declare_class_constant_long(event_loop_ce, "RUN_NOWAIT", sizeof("RUN_NOWAIT") - 1, EVRUN_NOWAIT TSRMLS_CC);
-	zend_declare_class_constant_long(event_loop_ce, "RUN_ONCE", sizeof("RUN_ONCE") - 1, EVRUN_ONCE TSRMLS_CC);
-	zend_declare_class_constant_long(event_loop_ce, "BREAK_ONE", sizeof("BREAK_ONE") - 1, EVBREAK_ONE TSRMLS_CC);
-	zend_declare_class_constant_long(event_loop_ce, "BREAK_ALL", sizeof("BREAK_ALL") - 1, EVBREAK_ALL TSRMLS_CC);
+	zend_declare_class_constant_long(event_loop_ce, "RUN_NOWAIT", sizeof("RUN_NOWAIT") - 1, (long) EVRUN_NOWAIT TSRMLS_CC);
+	zend_declare_class_constant_long(event_loop_ce, "RUN_ONCE", sizeof("RUN_ONCE") - 1, (long) EVRUN_ONCE TSRMLS_CC);
+	zend_declare_class_constant_long(event_loop_ce, "BREAK_ONE", sizeof("BREAK_ONE") - 1, (long) EVBREAK_ONE TSRMLS_CC);
+	zend_declare_class_constant_long(event_loop_ce, "BREAK_ALL", sizeof("BREAK_ALL") - 1, (long) EVBREAK_ALL TSRMLS_CC);
 	
 	
 	return SUCCESS;
