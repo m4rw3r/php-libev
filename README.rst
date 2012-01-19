@@ -109,6 +109,16 @@ Interface
 ``libev\EventLoop``
 -------------------
 
+**EventLoop::__construct**
+
+Creates a new EventLoop object with a new ``ev_loop`` as base.
+
+**EventLoop EventLoop::getDefaultLoop()**
+
+Returns the default event loop object, this object is a global singleton
+and it is not recommended to use it unless you require ChildEvent watchers
+as they can only be attached to the default loop.
+
 **boolean EventLoop::notifyFork()**
 
 Notifies libev that a fork might have been done and forces it
@@ -290,9 +300,37 @@ Sets the interval value, changes only take effect when the event has fired.
 
 **SignalEvent::__construct(signal, callback)**
 
-``signal`` is a ``pcntl`` signal constant.
+``signal`` is a `pcntl PHP Extension`_ signal constant.
 
-Does not currently work on my machine, for some reason.
+``libev\ChildEvent`` extends ``libev\Event``
+--------------------------------------------
 
-TODO: Document
+This event will be triggered on child status changes.
 
+**NOTE:** Must be attached to the default loop (ie. the instance from
+``EventLoop::getDefaultLoop()``)
+
+
+**ChildEvent::__construct(callback, int pid, boolean trace = false)**
+
+``pid`` is the PID of the child process to watch, 0 if you want the event
+to trigger for any child process.
+
+If ``trace`` is true, then this event is also triggered on suspend/continue
+and not only terminate.
+
+**int ChildEvent::getPid()**
+
+Returns the PID of the watched child process.
+
+**int ChildEvent::getRPid()**
+
+Returns the PID of the child which caused the last event trigger.
+
+**int ChildEvent::getRStatus()**
+
+Returns the exit/trace status (see ``waitpid`` and ``sys/wait.h``) caused by the child
+ChildEvent::getRPid().
+
+
+.. _`PCNTL PHP Extension`: http://www.php.net/manual/en/book.pcntl.php
