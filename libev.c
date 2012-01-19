@@ -38,7 +38,7 @@
 #endif
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#  include "config.h"
 #endif
 
 #include "php.h"
@@ -70,6 +70,7 @@ zend_class_entry *timer_event_ce;
 zend_class_entry *periodic_event_ce;
 zend_class_entry *signal_event_ce;
 zend_class_entry *child_event_ce;
+zend_class_entry *stat_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -113,6 +114,14 @@ void event_free_storage(void *object TSRMLS_DC)
 	
 	if(obj->watcher)
 	{
+		/* StatEvent has a string tied to the ev_stat which has to be deallocated */
+		if(instance_of_class(obj->std.ce, stat_event_ce) && ((ev_stat *)obj->watcher)->path)
+		{
+			IF_DEBUG(libev_printf("Freeing ev_stat path string, "));
+			
+			efree(((ev_stat *)obj->watcher)->path);
+		}
+		
 		efree(obj->watcher);
 	}
 	
@@ -287,13 +296,7 @@ PHP_METHOD(Event, setCallback)
 		return;
 	}
 	
-	if( ! zend_is_callable(zcallback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
+	check_callable(zcallback, func_name)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -361,13 +364,7 @@ PHP_METHOD(IOEvent, __construct)
 		}
 	}
 	
-	if( ! zend_is_callable(zcallback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
+	check_callable(zcallback, func_name)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&zcallback);
@@ -399,13 +396,7 @@ PHP_METHOD(TimerEvent, __construct)
 		return;
 	}
 	
-	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
+	check_callable(callback, func_name)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -494,15 +485,9 @@ PHP_METHOD(PeriodicEvent, __construct)
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
 		return;
 	}
-
-	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
-
+	
+	check_callable(callback, func_name)
+	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
 	obj->callback = callback;
@@ -609,14 +594,8 @@ PHP_METHOD(SignalEvent, __construct)
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &signo, &callback) != SUCCESS) {
 		return;
 	}
-
-	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
+	
+	check_callable(callback, func_name)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -649,14 +628,8 @@ PHP_METHOD(ChildEvent, __construct)
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zl|b", &callback, &pid, &trace) != SUCCESS) {
 		return;
 	}
-
-	if( ! zend_is_callable(callback, 0, &func_name TSRMLS_CC))
-	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%s' is not a valid callback", func_name);
-		efree(func_name);
-		RETURN_FALSE;
-	}
-	efree(func_name);
+	
+	check_callable(callback, func_name)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -724,6 +697,194 @@ PHP_METHOD(ChildEvent, getRStatus)
 	
 	RETURN_BOOL(0);
 }
+
+
+/**
+ * Watches a file system path for attribute changes, triggers when at least
+ * one attribute has been changed.
+ * 
+ * The path does not need to exist, and the event will be triggered when the
+ * path starts to exist.
+ * 
+ * The portable implementation of ev_stat is using the system stat() call
+ * to regularily poll the path for changes which is inefficient. But even
+ * with OS supported change notifications it can be resource-intensive if
+ * many StatEvent watchers are used.
+ * 
+ * If inotify is supported and is compiled into libev that will be used instead
+ * of stat() where possible.
+ * 
+ * NOTE: When libev is doing the stat() call the loop will be blocked, so it
+ *       it is not recommended to use it on network resources as there might be
+ *       a long delay (accoring to libev manual, it usually takes several
+ *       milliseconds on a network resource, in best cases)
+ * 
+ * stat() system calls also only supports full-second resolution portably,
+ * meaning that if the time is the only thing which changes on the file
+ * several updates of it close in time might be missed because stat() still
+ * returns the same full second, unless the file changes in other ways too.
+ * 
+ * One solution to this problem is to start a timer which triggers after
+ * roughly a one-second delay (recommended to be a bit grater than 1.0 seconds
+ * because Linux gettimeofday() might return a different time from time(),
+ * the libev manual recommends 1.02)
+ */
+PHP_METHOD(StatEvent, __construct)
+{
+	char *filename;
+	int filename_len;
+	char path_buffer[MAXPATHLEN];
+	int path_buffer_len;
+	char *stat_path;
+	double interval = 0.;
+	zval *callback;
+	char *func_name;
+	event_object *obj;
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sz|d", &filename, &filename_len, &callback, &interval) != SUCCESS) {
+		return;
+	}
+	
+	if(strlen(filename) != filename_len)
+	{
+		RETURN_BOOL(0);
+	}
+	
+	if( ! VCWD_REALPATH(filename, path_buffer))
+	{
+		RETURN_BOOL(0);
+	}
+	
+	/* TODO: Do we need to respect safe_mode and open_basedir here as in PHP's realpath()? */
+	
+	check_callable(callback, func_name)
+	
+	/* Allocate memory for the path used by libev and copy pathbuffer to it */
+	path_buffer_len = strlen(path_buffer);
+	stat_path = emalloc(path_buffer_len + 1);
+	memcpy(stat_path, path_buffer, path_buffer_len + 1);
+	
+	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	zval_add_ref(&callback);
+	obj->callback = callback;
+	
+	obj->watcher = emalloc(sizeof(ev_stat));
+	obj->watcher->data = obj;
+	ev_stat_init((ev_stat *)obj->watcher, event_callback, stat_path, interval);
+}
+
+PHP_METHOD(StatEvent, getPath)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		RETURN_STRING(((ev_stat *)obj->watcher)->path, 1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+PHP_METHOD(StatEvent, getInterval)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		RETURN_DOUBLE(((ev_stat *)obj->watcher)->interval);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/* The two macros below are more or less copies from php_if_fstat */
+#define MAKE_LONG_ZVAL(name, val)\
+	MAKE_STD_ZVAL(name); \
+	ZVAL_LONG(name, val);
+
+#define ev_statdata_to_php_array(statdata, php_zval)        \
+	zval *s_dev, *s_ino, *s_mode, *s_nlink, *s_uid, *s_gid, \
+		*s_rdev, *s_size, *s_atime, *s_mtime, *s_ctime;     \
+	array_init(php_zval);                                   \
+	MAKE_LONG_ZVAL(s_dev, statdata.st_dev);                 \
+	MAKE_LONG_ZVAL(s_ino, statdata.st_ino);                 \
+	MAKE_LONG_ZVAL(s_mode, statdata.st_mode);               \
+	MAKE_LONG_ZVAL(s_nlink, statdata.st_nlink);             \
+	MAKE_LONG_ZVAL(s_uid, statdata.st_uid);                 \
+	MAKE_LONG_ZVAL(s_gid, statdata.st_gid);                 \
+	MAKE_LONG_ZVAL(s_rdev, statdata.st_rdev);               \
+	MAKE_LONG_ZVAL(s_size, statdata.st_size);               \
+	MAKE_LONG_ZVAL(s_atime, statdata.st_atime);             \
+	MAKE_LONG_ZVAL(s_mtime, statdata.st_mtime);             \
+	MAKE_LONG_ZVAL(s_ctime, statdata.st_ctime);             \
+	/* Store string indexes referencing the same zval*/     \
+	zend_hash_update(HASH_OF(php_zval), "dev", strlen("dev")+1, (void *)&s_dev, sizeof(zval *), NULL);       \
+	zend_hash_update(HASH_OF(php_zval), "ino", strlen("ino")+1, (void *)&s_ino, sizeof(zval *), NULL);       \
+	zend_hash_update(HASH_OF(php_zval), "mode", strlen("mode")+1, (void *)&s_mode, sizeof(zval *), NULL);    \
+	zend_hash_update(HASH_OF(php_zval), "nlink", strlen("nlink")+1, (void *)&s_nlink, sizeof(zval *), NULL); \
+	zend_hash_update(HASH_OF(php_zval), "uid", strlen("uid")+1, (void *)&s_uid, sizeof(zval *), NULL);       \
+	zend_hash_update(HASH_OF(php_zval), "gid", strlen("gid")+1, (void *)&s_gid, sizeof(zval *), NULL);       \
+	zend_hash_update(HASH_OF(php_zval), "rdev", strlen("rdev")+1, (void *)&s_rdev, sizeof(zval *), NULL);    \
+	zend_hash_update(HASH_OF(php_zval), "size", strlen("size")+1, (void *)&s_size, sizeof(zval *), NULL);    \
+	zend_hash_update(HASH_OF(php_zval), "atime", strlen("atime")+1, (void *)&s_atime, sizeof(zval *), NULL); \
+	zend_hash_update(HASH_OF(php_zval), "mtime", strlen("mtime")+1, (void *)&s_mtime, sizeof(zval *), NULL); \
+	zend_hash_update(HASH_OF(php_zval), "ctime", strlen("ctime")+1, (void *)&s_ctime, sizeof(zval *), NULL); \
+	
+/**
+ * Returns the last stat information received about the file,
+ * all array elements will be zero if the event has not been triggered.
+ * 
+ * NOTE: If the nlink key is 0, then the file does not exist.
+ * 
+ * @return array
+ */
+PHP_METHOD(StatEvent, getAttr)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		ev_statdata_to_php_array(((ev_stat *)obj->watcher)->attr, return_value);
+		
+		return;
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Returns the next to last stat information received about the file,
+ * all array elements will be zero if the event has not been triggered.
+ * 
+ * NOTE: If the nlink key is 0, then the file does not exist.
+ * 
+ * @return array
+ */
+PHP_METHOD(StatEvent, getPrev)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		ev_statdata_to_php_array(((ev_stat *)obj->watcher)->prev, return_value);
+		
+		return;
+	}
+	
+	RETURN_BOOL(0);
+}
+
+
+
+// TODO: Implement StatEvent::getAttr, getPrev
 
 
 /**
@@ -1049,7 +1210,7 @@ PHP_METHOD(EventLoop, getPendingCount)
 	RETURN_BOOL(0);
 }
 
-#define ev_watcher_action(action, type)     if(object_ce == type##_event_ce)    \
+#define ev_watcher_action(action, type)     if(instance_of_class(object_ce, type##_event_ce)) \
 	{                                                                           \
 		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));           \
 		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
@@ -1089,7 +1250,7 @@ PHP_METHOD(EventLoop, add)
 		else ev_watcher_action(start, timer)
 		else ev_watcher_action(start, periodic)
 		else ev_watcher_action(start, signal)
-		else if(object_ce == child_event_ce)
+		else if(instance_of_class(object_ce, child_event_ce))
 		{
 			/* Special logic, ev_child can only be attached to the default loop */
 			if( ! ev_is_default_loop(loop_obj->loop))
@@ -1103,6 +1264,7 @@ PHP_METHOD(EventLoop, add)
 			ev_child_start(loop_obj->loop, (ev_child *)event->watcher);
 			IF_DEBUG(libev_printf("Calling ev_child_start\n"));
 		}
+		else ev_watcher_action(start, stat)
 		
 		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
@@ -1167,6 +1329,7 @@ PHP_METHOD(EventLoop, remove)
 		else ev_watcher_action(stop, periodic)
 		else ev_watcher_action(stop, signal)
 		else ev_watcher_action(stop, child)
+		else ev_watcher_action(stop, stat)
 		
 		/* Remove GC protection */
 		/* For some reason does zend_hash_index_del() decrease the zval refcount
@@ -1232,6 +1395,15 @@ static const function_entry child_event_methods[] = {
 	ZEND_ME(ChildEvent, getPid, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(ChildEvent, getRPid, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(ChildEvent, getRStatus, NULL, ZEND_ACC_PUBLIC)
+	{NULL, NULL, NULL}
+};
+
+static const function_entry stat_event_methods[] = {
+	ZEND_ME(StatEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	ZEND_ME(StatEvent, getPath, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(StatEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(StatEvent, getAttr, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(StatEvent, getPrev, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -1351,6 +1523,11 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\ChildEvent", child_event_methods);
 	child_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	child_event_ce->create_object = event_create_handler;
+	
+	/* libev\StatEvent */
+	INIT_CLASS_ENTRY(ce, "libev\\StatEvent", stat_event_methods);
+	stat_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	stat_event_ce->create_object = event_create_handler;
 	
 	
 	/* libev\EventLoop */

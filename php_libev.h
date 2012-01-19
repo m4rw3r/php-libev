@@ -40,4 +40,33 @@ extern zend_module_entry libev_module_entry;
 #include "TSRM.h"
 #endif
 
+
+#define check_callable(/* zval */ zcallback, /* char * */ tmp) \
+	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
+	{                                                          \
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,            \
+			"'%s' is not a valid callback", tmp);              \
+		efree(tmp);                                            \
+		RETURN_FALSE;                                          \
+	}                                                          \
+	efree(tmp);
+
+
+/* Returns true if the supplied *instance_ce == *ce or if any of *instance_ce's parent
+   class-entries equals *ce. Ie. instanceof, but without the interface check. */
+inline int instance_of_class(const zend_class_entry *instance_ce, const zend_class_entry *ce)
+{
+	while(instance_ce)
+	{
+		if (instance_ce == ce)
+		{
+			return 1;
+		}
+		instance_ce = instance_ce->parent;
+	}
+	
+	return 0;
+}
+
+
 #endif /* PHP_LIBEV_H */
