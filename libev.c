@@ -50,8 +50,8 @@
 
 #include <ev.h>
 
-// Override PHP's default debugging behaviour
-// if we only want to debug this extension
+/* Override PHP's default debugging behaviour
+   if we only want to debug this extension */
 #if LIBEV_DEBUG
 #  undef NDEBUG
 #endif
@@ -62,7 +62,7 @@ ZEND_GET_MODULE(libev)
 #endif
 
 
-// Defining class API
+/* Defining class API */
 zend_class_entry *event_ce;
 zend_class_entry *io_event_ce;
 zend_class_entry *timer_event_ce;
@@ -181,12 +181,12 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 	zend_hash_copy(obj->std.properties, &type->default_properties,
 	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
 	
-	// TODO: Do we need to be able to change the parameter to ev_loop_new() here?
+	/* TODO: Do we need to be able to change the parameter to ev_loop_new() here? */
 	obj->loop = ev_loop_new(EVFLAG_AUTO);
 	
 	IF_DEBUG(ev_verify(obj->loop));
 	
-	// Allocate internal hash for the associated Event objects
+	/* Allocate internal hash for the associated Event objects */
 	MAKE_STD_ZVAL(obj->events);
 	array_init(obj->events);
 	
@@ -225,7 +225,7 @@ static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
  */
 PHP_METHOD(Event, __construct)
 {
-	// Intentionally left empty
+	/* Intentionally left empty */
 }
 
 /**
@@ -299,7 +299,7 @@ PHP_METHOD(Event, setCallback)
 	
 	assert(obj->callback);
 	
-	// Destroy existing callback reference
+	/* Destroy existing callback reference */
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
@@ -332,14 +332,14 @@ PHP_METHOD(IOEvent, __construct)
 		return;
 	}
 	
-	// Check if we have the correct flags
+	/* Check if we have the correct flags */
 	if( ! (events & (EV_READ | EV_WRITE)))
 	{
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "events parameter must be at least one of IOEvent::READ or IOEvent::WRITE");
 		RETURN_FALSE;
 	}
 	
-	// Attempt to get the file descriptor from the stream
+	/* Attempt to get the file descriptor from the stream */
 	if(ZEND_FETCH_RESOURCE_NO_RETURN(stream, php_stream*, fd, -1, NULL, php_file_le_stream()))
 	{
 		if(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT | PHP_STREAM_CAST_INTERNAL, (void*)&file_desc, 1) != SUCCESS || file_desc < 0)
@@ -444,7 +444,7 @@ PHP_METHOD(TimerEvent, getRepeat)
  */
 PHP_METHOD(TimerEvent, getAfter)
 {
-	// TODO: Not sure if this is a good idea, ev_timer->at is marked as private in ev.h
+	/* TODO: Not sure if this is a good idea, ev_timer->at is marked as private in ev.h */
 	
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -459,8 +459,8 @@ PHP_METHOD(TimerEvent, getAfter)
 }
 	
 
-// TODO: implement support for ev_timer_again(loop, ev_timer*) ?
-// TODO: implement support for ev_timer_remaining(loop, ev_timer*) ?
+/* TODO: implement support for ev_timer_again(loop, ev_timer*) ? */
+/* TODO: implement support for ev_timer_remaining(loop, ev_timer*) ? */
 
 /**
  * Schedules an event (or a repeating series of events) at a specific point
@@ -596,7 +596,7 @@ PHP_METHOD(PeriodicEvent, setInterval)
 	RETURN_BOOL(0);
 }
 
-// TODO: Implement ev_periodic_again(loop, ev_periodic *) ?
+/* TODO: Implement ev_periodic_again(loop, ev_periodic *) ? */
 
 
 PHP_METHOD(SignalEvent, __construct)
@@ -720,7 +720,7 @@ PHP_METHOD(EventLoop, now)
  */
 PHP_METHOD(EventLoop, suspend)
 {
-	// TODO: Implement a check for if we already have suspended the eventloop?
+	/* TODO: Implement a check for if we already have suspended the eventloop? */
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
 	assert(obj->loop);
@@ -744,7 +744,7 @@ PHP_METHOD(EventLoop, suspend)
  */
 PHP_METHOD(EventLoop, resume)
 {
-	// TODO: Implement a check for it suspend has been called?
+	/* TODO: Implement a check for it suspend has been called? */
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
 	assert(obj->loop);
@@ -775,8 +775,8 @@ PHP_METHOD(EventLoop, resume)
  */
 PHP_METHOD(EventLoop, run)
 {
-	// TODO: Implement support for ev_unref() which will make the EvenLoop ignore
-	// the Event if it is the only active event
+	/* TODO: Implement support for ev_unref() which will make the EvenLoop ignore
+	   the Event if it is the only active event */
 	long how = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -941,7 +941,7 @@ PHP_METHOD(EventLoop, add)
 		
 		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
-		// Apply GC protection for the Event
+		/* Apply GC protection for the Event */
 		if(add_index_zval(loop_obj->events, (size_t) event->watcher, event_obj) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Could not add Event to internal hash\n"));
@@ -949,7 +949,7 @@ PHP_METHOD(EventLoop, add)
 			
 			RETURN_BOOL(0);
 		}
-		// Increase refcount because add_index_zval() does not
+		/* Increase refcount because add_index_zval() does not */
 		zval_add_ref(&event_obj);
 		
 		IF_DEBUG(libev_printf("postAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
@@ -987,7 +987,7 @@ PHP_METHOD(EventLoop, remove)
 	{
 		IF_DEBUG(libev_printf("preRemove refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
-		// Check that the event is associated with us
+		/* Check that the event is associated with us */
 		if(zend_hash_index_exists(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
@@ -1001,9 +1001,9 @@ PHP_METHOD(EventLoop, remove)
 		else ev_watcher_action(stop, timer)
 		else ev_watcher_action(stop, periodic)
 		
-		// Remove GC protection
-		// For some reason does zend_hash_index_del() decrease the zval refcount
-		// so no need to call zval_dtor
+		/* Remove GC protection */
+		/* For some reason does zend_hash_index_del() decrease the zval refcount
+		   so no need to call zval_dtor */
 		if(zend_hash_index_del(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Failed to remove Event from EventLoop internal hash\n"));
@@ -1022,11 +1022,11 @@ PHP_METHOD(EventLoop, remove)
 
 #undef ev_watcher_action
 
-// TODO: Implement EventLoop::getEvents() or something like that?
+/* TODO: Implement EventLoop::getEvents() or something like that? */
 
 
 static const function_entry event_methods[] = {
-	// Abstract __construct makes the class abstract
+	/* Abstract __construct makes the class abstract */
 	ZEND_ME(Event, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_ABSTRACT)
 	ZEND_ME(Event, isActive, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, isPending, NULL, ZEND_ACC_PUBLIC)
@@ -1081,55 +1081,55 @@ static const function_entry event_loop_methods[] = {
 PHP_MINIT_FUNCTION(libev)
 {
 	zend_class_entry ce;
-	// Init generic object handlers for Event objects, prevent clone
+	/* Init generic object handlers for Event objects, prevent clone */
 	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_object_handlers.clone_obj = NULL;
 	
 	
-	// libev\Event abstract
+	/* libev\Event abstract */
 	INIT_CLASS_ENTRY(ce, "libev\\Event", event_methods);
 	event_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	event_ce->create_object = event_create_handler;
 	
 	
-	// libev\IOEvent
+	/* libev\IOEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\IOEvent", io_event_methods);
 	io_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	// Override default object creation
+	/* Override default object creation */
 	io_event_ce->create_object = event_create_handler;
-	// Constants
+	/* Constants */
 	zend_declare_class_constant_long(io_event_ce, "READ", sizeof("READ") - 1, EV_READ TSRMLS_CC);
 	zend_declare_class_constant_long(io_event_ce, "WRITE", sizeof("WRITE") - 1, EV_WRITE TSRMLS_CC);
 	
 	
-	// libev\TimerEvent
+	/* libev\TimerEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\TimerEvent", timer_event_methods);
 	timer_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	timer_event_ce->create_object = event_create_handler;
 	
 	
-	// libev\PeriodicEvent
+	/* libev\PeriodicEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\PeriodicEvent", periodic_event_methods);
 	periodic_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	periodic_event_ce->create_object = event_create_handler;
 	
 	
-	// libev\SignalEvent
+	/* libev\SignalEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\SignalEvent", signal_event_methods);
 	signal_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	signal_event_ce->create_object = event_create_handler;
 	
 	
-	// libev\EventLoop
+	/* libev\EventLoop */
 	INIT_CLASS_ENTRY(ce, "libev\\EventLoop", event_loop_methods);
 	event_loop_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	
-	// Override default object handlers so we can use custom struct
+	/* Override default object handlers so we can use custom struct */
 	event_loop_ce->create_object = event_loop_create_handler;
 	memcpy(&event_loop_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_loop_object_handlers.clone_obj = NULL;
 	
-	// EventLoop class constants
+	/* EventLoop class constants */
 	zend_declare_class_constant_long(event_loop_ce, "RUN_NOWAIT", sizeof("RUN_NOWAIT") - 1, EVRUN_NOWAIT TSRMLS_CC);
 	zend_declare_class_constant_long(event_loop_ce, "RUN_ONCE", sizeof("RUN_ONCE") - 1, EVRUN_ONCE TSRMLS_CC);
 	zend_declare_class_constant_long(event_loop_ce, "BREAK_ONE", sizeof("BREAK_ONE") - 1, EVBREAK_ONE TSRMLS_CC);
