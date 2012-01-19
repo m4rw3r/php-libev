@@ -52,7 +52,7 @@
 
 // Override PHP's default debugging behaviour
 // if we only want to debug this extension
-#ifdef LIBEV_DEBUG
+#if LIBEV_DEBUG
 #  undef NDEBUG
 #endif
 #include <assert.h>
@@ -97,14 +97,14 @@ void event_free_storage(void *object TSRMLS_DC)
 	zend_hash_destroy(obj->std.properties);
 	FREE_HASHTABLE(obj->std.properties);
 	
-	IF_DEBUG(assert(obj->callback));
+	assert(obj->callback);
 	
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
 	}
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -146,12 +146,14 @@ void event_loop_free_storage(void *object TSRMLS_DC)
 	
 	event_loop_object *obj = (event_loop_object *) object;
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
 		ev_loop_destroy(obj->loop);
 	}
+	
+	assert(obj->events);
 	
 	zval_ptr_dtor(&obj->events);
 	
@@ -205,8 +207,8 @@ static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
 	
 	zval retval;
 	
-	IF_DEBUG(assert(w->data));
-	IF_DEBUG(assert(((event_object *)w->data)->callback));
+	assert(w->data);
+	assert(((event_object *)w->data)->callback);
 	
 	if(((event_object *)w->data)->callback)
 	{
@@ -236,7 +238,7 @@ PHP_METHOD(Event, isActive)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -260,7 +262,7 @@ PHP_METHOD(Event, isPending)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -295,7 +297,7 @@ PHP_METHOD(Event, setCallback)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->callback));
+	assert(obj->callback);
 	
 	// Destroy existing callback reference
 	if(obj->callback)
@@ -424,7 +426,7 @@ PHP_METHOD(TimerEvent, getRepeat)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -446,7 +448,7 @@ PHP_METHOD(TimerEvent, getAfter)
 	
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -519,7 +521,7 @@ PHP_METHOD(PeriodicEvent, getTime)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -539,7 +541,7 @@ PHP_METHOD(PeriodicEvent, getOffset)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -558,7 +560,7 @@ PHP_METHOD(PeriodicEvent, getInterval)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -582,7 +584,7 @@ PHP_METHOD(PeriodicEvent, setInterval)
 		return;
 	}
 	
-	IF_DEBUG(assert(obj->watcher));
+	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -636,7 +638,7 @@ PHP_METHOD(EventLoop, notifyFork)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -658,7 +660,7 @@ PHP_METHOD(EventLoop, getIteration)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -678,7 +680,7 @@ PHP_METHOD(EventLoop, getDepth)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -699,7 +701,7 @@ PHP_METHOD(EventLoop, now)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -721,7 +723,7 @@ PHP_METHOD(EventLoop, suspend)
 	// TODO: Implement a check for if we already have suspended the eventloop?
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -745,7 +747,7 @@ PHP_METHOD(EventLoop, resume)
 	// TODO: Implement a check for it suspend has been called?
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -773,6 +775,8 @@ PHP_METHOD(EventLoop, resume)
  */
 PHP_METHOD(EventLoop, run)
 {
+	// TODO: Implement support for ev_unref() which will make the EvenLoop ignore
+	// the Event if it is the only active event
 	long how = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -780,7 +784,7 @@ PHP_METHOD(EventLoop, run)
 		return;
 	}
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -809,7 +813,7 @@ PHP_METHOD(EventLoop, breakLoop)
 		return;
 	}
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -837,7 +841,7 @@ PHP_METHOD(EventLoop, setIOCollectInterval)
 		return;
 	}
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -865,7 +869,7 @@ PHP_METHOD(EventLoop, setTimeoutCollectInterval)
 		return;
 	}
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -886,7 +890,7 @@ PHP_METHOD(EventLoop, getPendingCount)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	IF_DEBUG(assert(obj->loop));
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
@@ -905,7 +909,8 @@ PHP_METHOD(EventLoop, getPendingCount)
  * Adds the event to the event loop.
  * 
  * This method will increase the refcount on the supplied Event, protecting it
- * from garbage collection. Refcount will be decreased on remove.
+ * from garbage collection. Refcount will be decreased on remove or if the
+ * EventLoop object is GCd.
  * 
  * @param  Event
  * @return boolean
@@ -923,8 +928,8 @@ PHP_METHOD(EventLoop, add)
 	
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
-	IF_DEBUG(assert(loop_obj->loop));
-	IF_DEBUG(assert(event->watcher));
+	assert(loop_obj->loop);
+	assert(event->watcher);
 	
 	if(loop_obj->loop && event->watcher && ! ev_is_active(event->watcher))
 	{
@@ -937,14 +942,15 @@ PHP_METHOD(EventLoop, add)
 		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
 		// Apply GC protection for the Event
-		zval_add_ref(&event_obj);
 		if(add_index_zval(loop_obj->events, (size_t) event->watcher, event_obj) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Could not add Event to internal hash\n"));
-			IF_DEBUG(assert(0));
+			assert(0);
 			
 			RETURN_BOOL(0);
 		}
+		// Increase refcount because add_index_zval() does not
+		zval_add_ref(&event_obj);
 		
 		IF_DEBUG(libev_printf("postAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
 		
@@ -973,8 +979,8 @@ PHP_METHOD(EventLoop, remove)
 	
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
-	IF_DEBUG(assert(loop_obj->loop));
-	IF_DEBUG(assert(event->watcher));
+	assert(loop_obj->loop);
+	assert(event->watcher);
 	
 	if(loop_obj->loop && event->watcher && ev_is_active(event->watcher))
 	{
@@ -984,7 +990,7 @@ PHP_METHOD(EventLoop, remove)
 		if(zend_hash_index_exists(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
-			IF_DEBUG(assert(0));
+			assert(0);
 			
 			RETURN_BOOL(0);
 		}
@@ -1001,7 +1007,7 @@ PHP_METHOD(EventLoop, remove)
 		if(zend_hash_index_del(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
 		{
 			IF_DEBUG(libev_printf("Failed to remove Event from EventLoop internal hash\n"));
-			IF_DEBUG(assert(0));
+			assert(0);
 			
 			RETURN_BOOL(0);
 		}
