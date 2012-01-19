@@ -306,7 +306,7 @@ header.
 
 For now, you can use this code to see which constans are defined::
 
-  $class = new ReflectionClass('libev\\SignalEvent'));
+  $class = new ReflectionClass('libev\\SignalEvent');
   var_dump($class->getConstants());
 
 ``libev\ChildEvent`` extends ``libev\Event``
