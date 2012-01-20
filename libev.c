@@ -210,7 +210,7 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
 /**
  * Generic event callback which will call the associated PHP callback.
  */
-static void event_callback(struct ev_loop *loop, ev_timer *w, int revents)
+static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 {
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
