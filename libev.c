@@ -1080,6 +1080,34 @@ PHP_METHOD(EventLoop, now)
 }
 
 /**
+ * Establishes the current time by querying the kernel, updating the time
+ * returned by EventLoop::now() in the progress.
+ * 
+ * This is a costly operation and is usually done automatically within ev_run ().
+ * This function is rarely useful, but when some event callback runs for a very
+ * long time without entering the event loop, updating libev's idea of the current
+ * time is a good idea.
+ * 
+ * @return boolean  false if object is not initialized
+ */
+PHP_METHOD(EventLoop, updateNow)
+{
+	/* TODO: Is this method name confusing? */
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->loop);
+	
+	if(obj->loop)
+	{
+		ev_now_update(obj->loop);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
  * Suspends the event loop, pausing all timers and delays processing of events.
  * 
  * NOTE: DO NOT CALL IF YOU HAVE CALLED EventLoop->suspend() ALREADY!
@@ -1132,7 +1160,8 @@ PHP_METHOD(EventLoop, resume)
  * is called or no more events are associated with this loop by default.
  * 
  * @param  int  libev run flag
- *              * int(0)                 run() handles events until there are no events to handle
+ *              * int(0)                 run() handles events until there are no events
+ *                attached, default
  *              * EventLoop::RUN_NOWAIT  run() looks for new events, handles them and
  *                then return after one iteration of the loop
  *              * EventLoop::RUN_ONCE    run() looks for new events (wait if necessary)
@@ -1475,6 +1504,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, getDepth, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getBackend, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, now, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, updateNow, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, suspend, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, resume, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, run, NULL, ZEND_ACC_PUBLIC)

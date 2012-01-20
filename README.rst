@@ -168,6 +168,16 @@ backend in use.
 Returns the time the current loop iteration received events.
 Seconds in libev time.
 
+**bool EventLoop::updateNow()**
+
+Establishes the current time by querying the kernel, updating the time returned
+by EventLoop::now() in the progress. This is a costly operation and is usually done
+automatically within EventLoop::run().
+
+This function is rarely useful, but when some event callback runs for a very long
+time without entering the event loop, updating libev's idea of the current time
+is a good idea.
+
 **bool EventLoop::suspend()**
 
 Suspends the event loop, pausing all timers and delays processing of events.
