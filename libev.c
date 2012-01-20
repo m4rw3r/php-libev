@@ -27,9 +27,10 @@
  * or implied, of Martin Wernståhl.
  */
 
+/* Debug-level, 1 = assert, 2 = assert + debug messages */
 #define LIBEV_DEBUG 0
 
-#if LIBEV_DEBUG
+#if LIBEV_DEBUG == 2
 #  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
 #  define IF_DEBUG(x) x
 #else
@@ -53,7 +54,7 @@
 
 /* Override PHP's default debugging behaviour
    if we only want to debug this extension */
-#if LIBEV_DEBUG
+#if LIBEV_DEBUG > 0
 #  undef NDEBUG
 #endif
 #include <assert.h>
