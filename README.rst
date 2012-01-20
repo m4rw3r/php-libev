@@ -135,7 +135,7 @@ Interface
 
 Creates a new EventLoop object with a new ``ev_loop`` as base.
 
-**EventLoop EventLoop::getDefaultLoop()**
+**static EventLoop EventLoop::getDefaultLoop()**
 
 Returns the default event loop object, this object is a global singleton
 and it is not recommended to use it unless you require ChildEvent watchers
@@ -145,6 +145,10 @@ as they can only be attached to the default loop.
 
 Notifies libev that a fork might have been done and forces it
 to reinitialize kernel state where needed on the next loop iteration.
+
+**boolean EventLoop::isDefaultLoop()**
+
+Returns true if the EventLoop is the default libev loop.
 
 **int EventLoop::getIteration()**
 

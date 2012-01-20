@@ -117,7 +117,7 @@ void event_free_storage(void *object TSRMLS_DC)
 		/* StatEvent has a string tied to the ev_stat which has to be deallocated */
 		if(instance_of_class(obj->std.ce, stat_event_ce) && ((ev_stat *)obj->watcher)->path)
 		{
-			IF_DEBUG(libev_printf("Freeing ev_stat path string, "));
+			IF_DEBUG(php_printf("Freeing ev_stat path string, "));
 			
 			efree(((ev_stat *)obj->watcher)->path);
 		}
@@ -957,6 +957,25 @@ PHP_METHOD(EventLoop, notifyFork)
 }
 
 /**
+ * Returns true if the loop is the default libev loop.
+ * 
+ * @return boolean
+ */
+PHP_METHOD(EventLoop, isDefaultLoop)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->loop);
+	
+	if(obj->loop)
+	{
+		RETURN_BOOL(ev_is_default_loop(obj->loop));
+	}
+	
+	RETURN_NULL();
+}
+
+/**
  * Returns the current loop iteration.
  * 
  * @return int
@@ -1407,6 +1426,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, getDefaultLoop, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, notifyFork, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, isDefaultLoop, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getIteration, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getDepth, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, now, NULL, ZEND_ACC_PUBLIC)
