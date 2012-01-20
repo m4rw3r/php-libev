@@ -158,6 +158,11 @@ Returns the current loop iteration.
 
 Returns the current nesting depth of event-loops.
 
+**int EventLoop::getBackend()**
+
+Returns one of the ``EventLoop::BACKEND_*`` constants indicating the event
+backend in use.
+
 **double EventLoop::now()**
 
 Returns the time the current loop iteration received events.

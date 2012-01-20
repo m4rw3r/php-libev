@@ -241,7 +241,7 @@ PHP_METHOD(Event, __construct)
  * Returns true if the event is active, ie. associated with an event loop.
  * 
  * @return boolean
- * @return null  If the watcher is uninitialized
+ * @return null  If object has not been initialized
  */
 PHP_METHOD(Event, isActive)
 {
@@ -265,7 +265,7 @@ PHP_METHOD(Event, isActive)
  *       the lbev manual says it is a bad idea
  * 
  * @return boolean
- * @return null  If the watcher is uninitialized
+ * @return null  If object has not been initialized
  */
 PHP_METHOD(Event, isPending)
 {
@@ -311,6 +311,8 @@ PHP_METHOD(Event, setCallback)
 	zval_add_ref(&zcallback);
 	obj->callback = zcallback;
 }
+
+/* TODO: Add Event::getCallback() ? */
 
 
 /**
@@ -500,7 +502,8 @@ PHP_METHOD(PeriodicEvent, __construct)
 /**
  * Returns the time for the next trigger of the event, seconds.
  * 
- * @return float
+ * @return double
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(PeriodicEvent, getTime)
 {
@@ -520,7 +523,8 @@ PHP_METHOD(PeriodicEvent, getTime)
  * When repeating, returns the offset, otherwise it returns the absolute time for
  * the event trigger.
  * 
- * @return float
+ * @return double
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(PeriodicEvent, getOffset)
 {
@@ -539,7 +543,8 @@ PHP_METHOD(PeriodicEvent, getOffset)
 /**
  * When repeating, returns the current interval value.
  * 
- * @return float
+ * @return double
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(PeriodicEvent, getInterval)
 {
@@ -558,7 +563,7 @@ PHP_METHOD(PeriodicEvent, getInterval)
 /**
  * Sets the interval value, changes only take effect when the event has fired.
  * 
- * @return boolean
+ * @return boolean  if object has not been initialized
  */
 PHP_METHOD(PeriodicEvent, setInterval)
 {
@@ -644,6 +649,7 @@ PHP_METHOD(ChildEvent, __construct)
  * Returns the PID this event was registered for.
  * 
  * @return int
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(ChildEvent, getPid)
 {
@@ -663,6 +669,7 @@ PHP_METHOD(ChildEvent, getPid)
  * Returns the PID for the last child triggering this event.
  * 
  * @return int
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(ChildEvent, getRPid)
 {
@@ -683,6 +690,7 @@ PHP_METHOD(ChildEvent, getRPid)
  * ChildEvent::getRPid().
  * 
  * @return int
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(ChildEvent, getRStatus)
 {
@@ -773,6 +781,12 @@ PHP_METHOD(StatEvent, __construct)
 	ev_stat_init((ev_stat *)obj->watcher, event_callback, stat_path, interval);
 }
 
+/**
+ * Returns the path this event is watching.
+ * 
+ * @return string
+ * @return false  if object has not been initialized
+ */
 PHP_METHOD(StatEvent, getPath)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
@@ -787,6 +801,12 @@ PHP_METHOD(StatEvent, getPath)
 	RETURN_BOOL(0);
 }
 
+/**
+ * Returns the interval which libev will check file status with stat().
+ * 
+ * @return double  seconds
+ * @return false  if object has not been initialized
+ */
 PHP_METHOD(StatEvent, getInterval)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
@@ -841,6 +861,7 @@ PHP_METHOD(StatEvent, getInterval)
  * NOTE: If the nlink key is 0, then the file does not exist.
  * 
  * @return array
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(StatEvent, getAttr)
 {
@@ -865,6 +886,7 @@ PHP_METHOD(StatEvent, getAttr)
  * NOTE: If the nlink key is 0, then the file does not exist.
  * 
  * @return array
+ * @return false  if object has not been initialized
  */
 PHP_METHOD(StatEvent, getPrev)
 {
@@ -960,6 +982,7 @@ PHP_METHOD(EventLoop, notifyFork)
  * Returns true if the loop is the default libev loop.
  * 
  * @return boolean
+ * @return null  if object is not initialized
  */
 PHP_METHOD(EventLoop, isDefaultLoop)
 {
@@ -1016,6 +1039,26 @@ PHP_METHOD(EventLoop, getDepth)
 }
 
 /**
+ * Returns one of the EventLoop::BACKEND_* flags indicating the event backend in use.
+ * 
+ * @return int
+ * @return false  if object is not initialized
+ */
+PHP_METHOD(EventLoop, getBackend)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->loop);
+	
+	if(obj->loop)
+	{
+		RETURN_LONG(ev_backend(obj->loop));
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
  * Returns the time the current loop iteration received events.
  * Seconds in libev.
  * 
@@ -1054,7 +1097,7 @@ PHP_METHOD(EventLoop, suspend)
 	{
 		ev_suspend(obj->loop);
 		
-		RETURN_BOOL(true);
+		RETURN_BOOL(1);
 	}
 	
 	RETURN_BOOL(0);
@@ -1100,8 +1143,6 @@ PHP_METHOD(EventLoop, resume)
  */
 PHP_METHOD(EventLoop, run)
 {
-	/* TODO: Implement support for ev_unref() which will make the EvenLoop ignore
-	   the Event if it is the only active event */
 	long how = 0;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -1183,7 +1224,7 @@ PHP_METHOD(EventLoop, setIOCollectInterval)
  * default 0.
  * 
  * @param  double  time in seconds
- * @return boolean
+ * @return boolean  false if object has not been initialized
  */
 PHP_METHOD(EventLoop, setTimeoutCollectInterval)
 {
@@ -1210,6 +1251,7 @@ PHP_METHOD(EventLoop, setTimeoutCollectInterval)
  * Returns the number of pending events.
  * 
  * @return int
+ * @return boolean  false if object has not been initialized
  */
 PHP_METHOD(EventLoop, getPendingCount)
 {
@@ -1243,6 +1285,8 @@ PHP_METHOD(EventLoop, getPendingCount)
  */
 PHP_METHOD(EventLoop, add)
 {
+	/* TODO: Implement support for ev_unref() which will make the EvenLoop ignore
+	   the Event if it is the only active event */
 	zval *event_obj;
 	event_object *event;
 	zend_class_entry *object_ce;
@@ -1429,6 +1473,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, isDefaultLoop, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getIteration, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getDepth, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, getBackend, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, now, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, suspend, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, resume, NULL, ZEND_ACC_PUBLIC)
@@ -1560,7 +1605,16 @@ PHP_MINIT_FUNCTION(libev)
 	zend_declare_class_constant_long(event_loop_ce, "RUN_ONCE", sizeof("RUN_ONCE") - 1, (long) EVRUN_ONCE TSRMLS_CC);
 	zend_declare_class_constant_long(event_loop_ce, "BREAK_ONE", sizeof("BREAK_ONE") - 1, (long) EVBREAK_ONE TSRMLS_CC);
 	zend_declare_class_constant_long(event_loop_ce, "BREAK_ALL", sizeof("BREAK_ALL") - 1, (long) EVBREAK_ALL TSRMLS_CC);
-	
+#   define backend_constant(name) \
+	zend_declare_class_constant_long(event_loop_ce, "BACKEND_" #name, sizeof("BACKEND_" #name) - 1, (long) EVBACKEND_##name TSRMLS_CC)
+	backend_constant(SELECT);
+	backend_constant(POLL);
+	backend_constant(EPOLL);
+	backend_constant(KQUEUE);
+	backend_constant(DEVPOLL);
+	backend_constant(PORT);
+	backend_constant(ALL);
+#   undef backend_constant
 	
 	return SUCCESS;
 }
