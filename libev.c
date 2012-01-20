@@ -275,7 +275,7 @@ PHP_METHOD(Event, setCallback)
 		return;
 	}
 	
-	check_callable(zcallback, func_name)
+	check_callable(zcallback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -292,6 +292,7 @@ PHP_METHOD(Event, setCallback)
 }
 
 /* TODO: Add Event::getCallback() ? */
+/* TODO: Add Event::getPriority() and Event::setPriority() */
 
 /**
  * Invokes the callback on this event, Event does not need to be attached
@@ -372,7 +373,7 @@ PHP_METHOD(IOEvent, __construct)
 		}
 	}
 	
-	check_callable(zcallback, func_name)
+	check_callable(zcallback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&zcallback);
@@ -404,7 +405,7 @@ PHP_METHOD(TimerEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name)
+	check_callable(callback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -494,7 +495,7 @@ PHP_METHOD(PeriodicEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name)
+	check_callable(callback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -606,7 +607,7 @@ PHP_METHOD(SignalEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name)
+	check_callable(callback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -640,7 +641,7 @@ PHP_METHOD(ChildEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name)
+	check_callable(callback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -769,7 +770,7 @@ PHP_METHOD(StatEvent, __construct)
 	
 	/* TODO: Do we need to respect safe_mode and open_basedir here? */
 	
-	check_callable(callback, func_name)
+	check_callable(callback, func_name);
 	
 	/* This string needs to be freed on object destruction */
 	stat_path = emalloc(filename_len + 1);

@@ -49,7 +49,7 @@ extern zend_module_entry libev_module_entry;
 		efree(tmp);                                            \
 		RETURN_FALSE;                                          \
 	}                                                          \
-	efree(tmp);
+	efree(tmp)
 
 
 /* Returns true if the supplied *instance_ce == *ce or if any of *instance_ce's parent
