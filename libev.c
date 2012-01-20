@@ -76,6 +76,7 @@ zend_class_entry *event_loop_ce;
 
 
 zend_object_handlers event_object_handlers;
+zend_object_handlers stat_event_object_handlers;
 zend_object_handlers event_loop_object_handlers;
 
 
@@ -85,26 +86,59 @@ typedef struct event_object {
 	zval *callback;
 } event_object;
 
+typedef event_object stat_event_object;
+
 typedef struct event_loop_object {
 	zend_object std;
 	struct ev_loop *loop;
-	zval *events;
 } event_loop_object;
 
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
 zval *default_event_loop_object;
 
 
-void event_free_storage(void *object TSRMLS_DC)
-{
-	IF_DEBUG(libev_printf("Freeing event_object..."));
-	
-	event_object *obj = (event_object *) object;
-	
-	zend_hash_destroy(obj->std.properties);
-	FREE_HASHTABLE(obj->std.properties);
-	
-	assert(obj->callback);
+#define create_handler(name) zend_object_value name##_create_handler(zend_class_entry *type TSRMLS_DC)\
+{                                                                                                \
+	IF_DEBUG(libev_printf("Allocating " #name "_object..."));                                    \
+	                                                                                             \
+	zval *tmp;                                                                                   \
+	zend_object_value retval;                                                                    \
+	                                                                                             \
+	name##_object *obj = emalloc(sizeof(name##_object));                                         \
+	memset(obj, 0, sizeof(name##_object));                                                       \
+	obj->std.ce = type;                                                                          \
+	                                                                                             \
+	ALLOC_HASHTABLE(obj->std.properties);                                                        \
+	zend_hash_init(obj->std.properties, 0, NULL, ZVAL_PTR_DTOR, 0);                              \
+	zend_hash_copy(obj->std.properties, &type->default_properties,                               \
+	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));                       \
+	                                                                                             \
+	retval.handle = zend_objects_store_put(obj, NULL, name##_free_storage, NULL TSRMLS_CC);      \
+	retval.handlers = &name##_object_handlers;                                                   \
+	                                                                                             \
+	IF_DEBUG(php_printf("done\n"));                                                              \
+	                                                                                             \
+	return retval;                                                                               \
+}
+
+#define free_storage(name, code) void name##_free_storage(void *object TSRMLS_DC) \
+{                                                                                 \
+	IF_DEBUG(libev_printf("Freeing " #name "_object..."));                        \
+	                                                                              \
+	zval *events;                                                                 \
+	name##_object *obj = (name##_object *) object;                                \
+	                                                                              \
+	zend_hash_destroy(obj->std.properties);                                       \
+	FREE_HASHTABLE(obj->std.properties);                                          \
+	                                                                              \
+	code                                                                          \
+	                                                                              \
+	efree(obj);                                                                   \
+	                                                                              \
+	IF_DEBUG(php_printf("done\n"));                                               \
+}
+
+free_storage(event, assert(obj->callback);
 	
 	if(obj->callback)
 	{
@@ -115,98 +149,41 @@ void event_free_storage(void *object TSRMLS_DC)
 	
 	if(obj->watcher)
 	{
-		/* StatEvent has a string tied to the ev_stat which has to be deallocated */
-		if(instance_of_class(obj->std.ce, stat_event_ce) && ((ev_stat *)obj->watcher)->path)
-		{
-			IF_DEBUG(php_printf("Freeing ev_stat path string, "));
-			
-			efree(((ev_stat *)obj->watcher)->path);
-		}
-		
 		efree(obj->watcher);
+	})
+
+free_storage(stat_event, assert(obj->callback);
+	
+	if(obj->callback)
+	{
+		zval_ptr_dtor(&obj->callback);
 	}
 	
-	efree(obj);
+	assert(obj->watcher);
 	
-	IF_DEBUG(php_printf("done\n"));
-}
+	if(obj->watcher)
+	{
+		/* ev_stat has a pointer to a PHP allocated string, free it */
+		efree(((ev_stat *)obj->watcher)->path);
+		efree(obj->watcher);
+	})
 
-zend_object_value event_create_handler(zend_class_entry *type TSRMLS_DC)
-{
-	IF_DEBUG(libev_printf("Allocating event_object..."));
-	
-	zval *tmp;
-	zend_object_value retval;
-	
-	event_object *obj = emalloc(sizeof(event_object));
-	memset(obj, 0, sizeof(event_object));
-	obj->std.ce = type;
-	
-	ALLOC_HASHTABLE(obj->std.properties);
-	zend_hash_init(obj->std.properties, 0, NULL, ZVAL_PTR_DTOR, 0);
-	zend_hash_copy(obj->std.properties, &type->default_properties,
-	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
-	
-	retval.handle = zend_objects_store_put(obj, NULL, event_free_storage, NULL TSRMLS_CC);
-	retval.handlers = &event_object_handlers;
-	
-	IF_DEBUG(php_printf("done\n"));
-	
-	return retval;
-}
-
-void event_loop_free_storage(void *object TSRMLS_DC)
-{
-	IF_DEBUG(libev_printf("Freeing event_loop_object..."));
-	
-	event_loop_object *obj = (event_loop_object *) object;
-	
-	assert(obj->loop);
+free_storage(event_loop, assert(obj->loop);
 	
 	if(obj->loop)
 	{
+		events = (zval *)ev_userdata(obj->loop);
+		
+		zval_ptr_dtor(&events);
 		ev_loop_destroy(obj->loop);
-	}
-	
-	assert(obj->events);
-	
-	zval_ptr_dtor(&obj->events);
-	
-	zend_hash_destroy(obj->std.properties);
-	FREE_HASHTABLE(obj->std.properties);
-	
-	efree(obj);
-	
-	IF_DEBUG(php_printf("done\n"));
-}
+	})
 
-zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
-{
-	IF_DEBUG(libev_printf("Allocating event_loop_object..."));
-	
-	zval *tmp;
-	zend_object_value retval;
-	
-	event_loop_object *obj = emalloc(sizeof(event_loop_object));
-	memset(obj, 0, sizeof(event_loop_object));
-	obj->std.ce = type;
-	
-	ALLOC_HASHTABLE(obj->std.properties);
-	zend_hash_init(obj->std.properties, 0, NULL, ZVAL_PTR_DTOR, 0);
-	zend_hash_copy(obj->std.properties, &type->default_properties,
-	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
-	
-	/* Allocate internal hash for the associated Event objects */
-	MAKE_STD_ZVAL(obj->events);
-	array_init(obj->events);
-	
-	retval.handle = zend_objects_store_put(obj, NULL, event_loop_free_storage, NULL TSRMLS_CC);
-	retval.handlers = &event_loop_object_handlers;
-	
-	IF_DEBUG(php_printf("done\n"));
-	
-	return retval;
-}
+create_handler(event)
+create_handler(stat_event)
+create_handler(event_loop)
+
+#undef create_handler
+#undef free_storage
 
 /**
  * Generic event callback which will call the associated PHP callback.
@@ -765,13 +742,19 @@ PHP_METHOD(ChildEvent, getRStatus)
  * roughly a one-second delay (recommended to be a bit grater than 1.0 seconds
  * because Linux gettimeofday() might return a different time from time(),
  * the libev manual recommends 1.02)
+ * 
+ * @param  string  Path to file to watch, does not need to exist at time of call
+ *                 NOTE: absolute paths are to be preferred, as libev's behaviour
+ *                       is undefined if the current working directory changes
+ * @param  callback
+ * @param  double    the minimum interval libev will check for file-changes,
+ *                   will automatically be set to the minimum value by libev if
+ *                   the supplied value is smaller than the allowed minimum.
  */
 PHP_METHOD(StatEvent, __construct)
 {
 	char *filename;
 	int filename_len;
-	char path_buffer[MAXPATHLEN];
-	int path_buffer_len;
 	char *stat_path;
 	double interval = 0.;
 	zval *callback;
@@ -782,24 +765,15 @@ PHP_METHOD(StatEvent, __construct)
 		return;
 	}
 	
-	if(strlen(filename) != filename_len)
-	{
-		RETURN_BOOL(0);
-	}
+	assert(strlen(filename) == filename_len);
 	
-	if( ! VCWD_REALPATH(filename, path_buffer))
-	{
-		RETURN_BOOL(0);
-	}
-	
-	/* TODO: Do we need to respect safe_mode and open_basedir here as in PHP's realpath()? */
+	/* TODO: Do we need to respect safe_mode and open_basedir here? */
 	
 	check_callable(callback, func_name)
 	
-	/* Allocate memory for the path used by libev and copy pathbuffer to it */
-	path_buffer_len = strlen(path_buffer);
-	stat_path = emalloc(path_buffer_len + 1);
-	memcpy(stat_path, path_buffer, path_buffer_len + 1);
+	/* This string needs to be freed on object destruction */
+	stat_path = emalloc(filename_len + 1);
+	memcpy(stat_path, filename, filename_len + 1);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	zval_add_ref(&callback);
@@ -1554,6 +1528,9 @@ PHP_MINIT_FUNCTION(libev)
 	/* Init generic object handlers for Event objects, prevent clone */
 	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_object_handlers.clone_obj = NULL;
+	/* Same for StatEvent */
+	memcpy(&stat_event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+	stat_event_object_handlers.clone_obj = NULL;
 	
 	
 	/* libev\Event abstract */
@@ -1648,7 +1625,7 @@ PHP_MINIT_FUNCTION(libev)
 	/* libev\StatEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\StatEvent", stat_event_methods);
 	stat_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	stat_event_ce->create_object = event_create_handler;
+	stat_event_ce->create_object = stat_event_create_handler;
 	
 	
 	/* libev\EventLoop */
