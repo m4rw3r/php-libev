@@ -248,6 +248,7 @@ when the EventLoop object is Garbage Collected.
 
 Removes the event from the event loop, will skip all pending events on it too.
 
+
 ``libev\Event``
 ---------------
 
@@ -266,6 +267,13 @@ the callback has not been called yet).
 
 Replaces the PHP callback on an event.
 
+**boolean Event::invoke()**
+
+Invokes the callback on this event, Event does not need to be attached
+to any EventLoop for this to work (disregarding requirments of the
+associated callback itself).
+
+
 ``libev\IOEvent`` extends ``libev\Event``
 -----------------------------------------
 
@@ -278,6 +286,7 @@ to write on the supplied stream.
 ``IOEvent::WRITE`` depending on the types of events you want to listen to.
 
 ``resource`` is a valid PHP stream resource.
+
 
 ``libev\TimerEvent`` extends ``libev\Event``
 --------------------------------------------
@@ -299,6 +308,7 @@ Returns the seconds between event triggering.
 **double TimerEvent::getAfter()**
 
 Returns the time from the loop start until the first triggering of this TimerEvent.
+
 
 ``libev\PeriodicEvent`` extends ``libev\Event``
 -----------------------------------------------
@@ -336,6 +346,7 @@ When repeating, returns the current interval value.
 
 Sets the interval value, changes only take effect when the event has fired.
 
+
 ``libev\SignalEvent`` extends ``libev\Event``
 ---------------------------------------------
 
@@ -349,6 +360,7 @@ For now, you can use this code to see which constans are defined::
 
   $class = new ReflectionClass('libev\\SignalEvent');
   var_dump($class->getConstants());
+
 
 ``libev\ChildEvent`` extends ``libev\Event``
 --------------------------------------------
@@ -380,6 +392,7 @@ Returns the PID of the child which caused the last event trigger.
 Returns the exit/trace status (see ``waitpid`` and ``sys/wait.h``) caused by the child
 ChildEvent::getRPid().
 
+
 ``libev\StatEvent`` extends ``libev\Event``
 -------------------------------------------
 
@@ -397,11 +410,10 @@ many StatEvent watchers are used.
 If inotify is supported and is compiled into libev that will be used instead
 of stat() where possible.
 
-**NOTE:**
-          When libev is doing the stat() call the loop will be blocked, so it
-          is not recommended to use it on network resources as there might be
-          a long delay (accoring to libev manual, it usually takes several
-          milliseconds on a network resource, in best cases)
+**NOTE:** When libev is doing the stat() call the loop will be blocked, so it
+is not recommended to use it on network resources as there might be a long
+delay (accoring to libev manual, it usually takes several milliseconds on a
+network resource, in best cases)
 
 stat() system calls also only supports full-second resolution portably,
 meaning that if the time is the only thing which changes on the file
@@ -426,7 +438,7 @@ value is smaller than the default.
 **array StatEvent::getAttr()**
 
 Returns a key => value list of the file attributes, all keys will be 0 if the
-event has not yet been triggered.
+event has not yet been added to an EventLoop.
 
 The following attributes are supported:
 
@@ -442,14 +454,13 @@ The following attributes are supported:
 * mtime
 * ctime
 
-**NOTE:**
-          If nlink is 0, the file does not exist and the rest of the values
-          may be inaccurate as they might remain from the file which existed
-          during previous events.
+**NOTE:** If nlink is 0, the file does not exist and the rest of the values
+may be inaccurate as they might remain from the file which existed during
+previous events.
 
 **array StatEvent::getPrev()**
 
 Returns the previous file attributes, all keys will be 0 if the
-event has not yet been triggered.
+event has not yet been added to an EventLoop.
 
 .. _`PCNTL PHP Extension`: http://www.php.net/manual/en/book.pcntl.php

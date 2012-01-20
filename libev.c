@@ -212,6 +212,7 @@ zend_object_value event_loop_create_handler(zend_class_entry *type TSRMLS_DC)
  */
 static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 {
+	/* Note: loop might be null pointer because of Event::invoke() */
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
 	zval retval;
@@ -313,6 +314,33 @@ PHP_METHOD(Event, setCallback)
 }
 
 /* TODO: Add Event::getCallback() ? */
+
+/**
+ * Invokes the callback on this event, Event does not need to be attached
+ * to any EventLoop for this to work (disregarding requirments of the
+ * associated callback itself).
+ * 
+ * @return boolean  false if the object is uninitialized
+ */
+PHP_METHOD(Event, invoke)
+{
+	/* Empty dummy-loop pointer */
+	struct ev_loop *loop;
+	int revents = 0;
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
+		ev_invoke(loop, obj->watcher, revents);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
 
 
 /**
@@ -856,7 +884,7 @@ PHP_METHOD(StatEvent, getInterval)
 	
 /**
  * Returns the last stat information received about the file,
- * all array elements will be zero if the event has not been triggered.
+ * all array elements will be zero if the event has not been added to an EventLoop.
  * 
  * NOTE: If the nlink key is 0, then the file does not exist.
  * 
@@ -881,7 +909,7 @@ PHP_METHOD(StatEvent, getAttr)
 
 /**
  * Returns the next to last stat information received about the file,
- * all array elements will be zero if the event has not been triggered.
+ * all array elements will be zero if the event has not been added to an EventLoop.
  * 
  * NOTE: If the nlink key is 0, then the file does not exist.
  * 
@@ -1449,6 +1477,7 @@ static const function_entry event_methods[] = {
 	ZEND_ME(Event, isActive, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, isPending, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, setCallback, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(Event, invoke, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
