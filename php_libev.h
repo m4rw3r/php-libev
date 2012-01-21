@@ -68,5 +68,94 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	return 0;
 }
 
+/* Used to initialize the object storage pointer in __construct */
+#define event_object_prepare(event_object_ptr, zcallback)                                 \
+	event_object_ptr = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC); \
+	zval_add_ref(&zcallback);                                                             \
+	event_object_ptr->callback = zcallback;                                               \
+	event_object_ptr->this     = getThis();                                               \
+	event_object_ptr->evloop   = NULL
+
+/* Is true if event_object is registered with event_loop_object */
+#define event_is_in_loop(event_object, event_loop_object) \
+	(event_object->evloop->loop == event_loop_object->loop)
+
+/* Protects event_objects from garbage collection by increasing their
+   refcount and storing them in the event_loop_object's doubly-linked
+   list, also sets event_object->evloop to event_loop_object */
+#define _loop_ref_add(event_object, event_loop_object)       \
+	assert(event_object->this);                              \
+	zval_add_ref(&event_object->this);                       \
+	event_object->evloop = event_loop_object;                \
+	if( ! event_loop_object->events_first) {                 \
+		event_object->next = NULL;                           \
+		event_object->prev = NULL;                           \
+		event_loop_object->events_first = event_object;      \
+		event_loop_object->events_last  = event_object;      \
+	}                                                        \
+	else                                                     \
+	{                                                        \
+		assert(event_loop_object->events_first);             \
+		assert(event_loop_object->events_last);              \
+		event_object->prev = event_loop_object->events_last; \
+		event_loop_object->events_last->next = event_object; \
+		event_loop_object->events_last = event_object;       \
+		event_object->next = NULL;                           \
+	}
+
+/* Removes garbage collection protection by removing the event from the
+   doubly linked list, nulling the event_object->evloop and finally calling
+   zval_ptr_dtor */
+#define _loop_ref_del(event_object)                                      \
+	assert(event_object->evloop);                                        \
+	if(event_object->next)                                               \
+	{                                                                    \
+		if(event_object->prev)                                           \
+		{                                                                \
+			/* Middle of the doubly-linked list */                       \
+			event_object->prev->next = event_object->next;               \
+			event_object->next->prev = event_object->prev;               \
+		}                                                                \
+		else                                                             \
+		{                                                                \
+			/* First of the doubly-linked list */                        \
+			event_object->evloop->events_first = event_object->next;     \
+			event_object->next->prev = NULL;                             \
+		}                                                                \
+	}                                                                    \
+	else if(event_object->prev)                                          \
+	{                                                                    \
+		/* Last of the doubly-linked list */                             \
+		event_object->prev->next = NULL;                                 \
+		event_object->evloop->events_last = event_object->prev;          \
+	}                                                                    \
+	else                                                                 \
+	{                                                                    \
+		/* Only elment of the doubly-linked list */                      \
+		event_object->evloop->events_first = NULL;                       \
+		event_object->evloop->events_last  = NULL;                       \
+	}                                                                    \
+	event_object->next   = NULL;                                         \
+	event_object->prev   = NULL;                                         \
+	event_object->evloop = NULL;                                         \
+	zval_ptr_dtor(&event_object->this)
+
+#if LIBEV_DEBUG > 1
+#  define loop_ref_add(event_object, event_loop_object)      \
+	_loop_ref_add(event_object, event_loop_object);          \
+	libev_printf("Increased refcount on Event 0x%lx to %d\n", \
+		(size_t) event_object->this,          \
+		Z_REFCOUNT_P(event_object->this));
+
+#  define loop_ref_del(event_object)                           \
+	libev_printf("Decreasing refcount on Event 0x%lx to %d\n",  \
+		(size_t) event_object->this,            \
+		Z_REFCOUNT_P(event_object->this) - 1);                 \
+	_loop_ref_del(event_object);
+#else
+#  define loop_ref_add(event_object, event_loop_object) _loop_ref_add(event_object, event_loop_object)
+#  define loop_ref_del(event_object) _loop_ref_del(event_object)
+#endif
+
 
 #endif /* PHP_LIBEV_H */

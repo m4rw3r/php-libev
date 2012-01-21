@@ -79,18 +79,25 @@ zend_object_handlers event_object_handlers;
 zend_object_handlers stat_event_object_handlers;
 zend_object_handlers event_loop_object_handlers;
 
+struct _event_loop_object;
 
-typedef struct event_object {
-	zend_object std;
-	ev_watcher *watcher;
-	zval *callback;
+typedef struct _event_object {
+	zend_object    std;
+	ev_watcher     *watcher;
+	zval           *this;     /* No need to free *object, PHP does it */
+	zval           *callback;
+	struct _event_loop_object *evloop;
+	struct _event_object   *prev;     /* Part of events doubly linked list on event_loop_object */
+	struct _event_object   *next;     /* Part of events doubly linked list on event_loop_object */
 } event_object;
 
 typedef event_object stat_event_object;
 
-typedef struct event_loop_object {
-	zend_object std;
+typedef struct _event_loop_object {
+	zend_object    std;
 	struct ev_loop *loop;
+	event_object   *events_first;
+	event_object   *events_last;  /* Reason for this is to be able to add events fast */
 } event_loop_object;
 
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
@@ -138,7 +145,9 @@ zval *default_event_loop_object;
 	IF_DEBUG(php_printf("done\n"));                                               \
 }
 
-free_storage(event, assert(obj->callback);
+free_storage(event,
+	
+	assert(obj->callback);
 	
 	if(obj->callback)
 	{
@@ -150,9 +159,12 @@ free_storage(event, assert(obj->callback);
 	if(obj->watcher)
 	{
 		efree(obj->watcher);
-	})
+	}
+)
 
-free_storage(stat_event, assert(obj->callback);
+free_storage(stat_event,
+	
+	assert(obj->callback);
 	
 	if(obj->callback)
 	{
@@ -166,17 +178,37 @@ free_storage(stat_event, assert(obj->callback);
 		/* ev_stat has a pointer to a PHP allocated string, free it */
 		efree(((ev_stat *)obj->watcher)->path);
 		efree(obj->watcher);
-	})
+	}
+)
 
-free_storage(event_loop, assert(obj->loop);
+free_storage(event_loop,
+	
+	assert(obj->loop);
 	
 	if(obj->loop)
 	{
-		events = (zval *)ev_userdata(obj->loop);
-		
-		zval_ptr_dtor(&events);
 		ev_loop_destroy(obj->loop);
-	})
+	}
+	
+	if(obj->events_first)
+	{
+		/* Free all in the linked list */
+		event_object *ev = obj->events_first;
+		event_object *tmp;
+		
+		while(ev)
+		{
+			assert(ev->this);
+			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%x to %d\n",
+				(unsigned int) (size_t) ev->this,
+				Z_REFCOUNT_P(ev->this) - 1));
+			
+			tmp = ev->next;
+			zval_ptr_dtor(&ev->this);
+			ev = tmp;
+		}
+	}
+)
 
 create_handler(event)
 create_handler(stat_event)
@@ -194,6 +226,7 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
 	zval retval;
+	event_object *event;
 	
 	assert(w->data);
 	assert(((event_object *)w->data)->callback);
@@ -204,6 +237,13 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 		{
 			zval_dtor(&retval);
 		}
+	}
+	
+	if(loop && ! ev_is_active(w))
+	{
+		event = (event_object *)w->data;
+		
+		loop_ref_del(event);
 	}
 }
 
@@ -381,11 +421,10 @@ PHP_METHOD(IOEvent, __construct)
 	
 	check_callable(zcallback, func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&zcallback);
-	obj->callback = zcallback;
+	event_object_prepare(obj, zcallback);
 	
 	obj->watcher = emalloc(sizeof(ev_io));
+	memset(obj->watcher, 0, sizeof(ev_io));
 	obj->watcher->data = obj;
 	ev_io_init((ev_io *)obj->watcher, event_callback, (int)file_desc, (int)events);
 }
@@ -413,11 +452,10 @@ PHP_METHOD(TimerEvent, __construct)
 	
 	check_callable(callback, func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&callback);
-	obj->callback = callback;
+	event_object_prepare(obj, callback);
 	
 	obj->watcher = emalloc(sizeof(ev_timer));
+	memset(obj->watcher, 0, sizeof(ev_timer));
 	obj->watcher->data = obj;
 	ev_timer_init((ev_timer *)obj->watcher, event_callback, after, repeat);
 }
@@ -503,11 +541,10 @@ PHP_METHOD(PeriodicEvent, __construct)
 	
 	check_callable(callback, func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&callback);
-	obj->callback = callback;
+	event_object_prepare(obj, callback);
 
 	obj->watcher = emalloc(sizeof(ev_periodic));
+	memset(obj->watcher, 0, sizeof(ev_periodic));
 	obj->watcher->data = obj;
 	ev_periodic_init((ev_periodic *)obj->watcher, event_callback, after, repeat, 0);
 }
@@ -615,11 +652,10 @@ PHP_METHOD(SignalEvent, __construct)
 	
 	check_callable(callback, func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&callback);
-	obj->callback = callback;
-
+	event_object_prepare(obj, callback);
+	
 	obj->watcher = emalloc(sizeof(ev_signal));
+	memset(obj->watcher, 0, sizeof(ev_signal));
 	obj->watcher->data = obj;
 	ev_signal_init((ev_signal *)obj->watcher, event_callback, (int) signo);
 }
@@ -649,11 +685,10 @@ PHP_METHOD(ChildEvent, __construct)
 	
 	check_callable(callback, func_name);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&callback);
-	obj->callback = callback;
+	event_object_prepare(obj, callback);
 	
 	obj->watcher = emalloc(sizeof(ev_child));
+	memset(obj->watcher, 0, sizeof(ev_child));
 	obj->watcher->data = obj;
 	ev_child_init((ev_child *)obj->watcher, event_callback, (int)pid, (int)trace);
 }
@@ -782,11 +817,10 @@ PHP_METHOD(StatEvent, __construct)
 	stat_path = emalloc(filename_len + 1);
 	memcpy(stat_path, filename, filename_len + 1);
 	
-	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	zval_add_ref(&callback);
-	obj->callback = callback;
+	event_object_prepare(obj, callback);
 	
 	obj->watcher = emalloc(sizeof(ev_stat));
+	memset(obj->watcher, 0, sizeof(ev_stat));
 	obj->watcher->data = obj;
 	ev_stat_init((ev_stat *)obj->watcher, event_callback, stat_path, interval);
 }
@@ -1326,23 +1360,23 @@ PHP_METHOD(EventLoop, add)
 {
 	/* TODO: Implement support for ev_unref() which will make the EvenLoop ignore
 	   the Event if it is the only active event */
-	zval *event_obj;
+	zval *zevent;
 	event_object *event;
 	zend_class_entry *object_ce;
 	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &zevent, event_ce) != SUCCESS) {
 		return;
 	}
 	
-	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
+	event = (event_object *)zend_object_store_get_object(zevent TSRMLS_CC);
 	
 	assert(loop_obj->loop);
 	assert(event->watcher);
 	
 	if(loop_obj->loop && event->watcher && ! ev_is_active(event->watcher))
 	{
-		object_ce = zend_get_class_entry(event_obj);
+		object_ce = zend_get_class_entry(zevent);
 		
 		ev_watcher_action(start, io)
 		else ev_watcher_action(start, timer)
@@ -1364,20 +1398,8 @@ PHP_METHOD(EventLoop, add)
 		}
 		else ev_watcher_action(start, stat)
 		
-		IF_DEBUG(libev_printf("preAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
-		
-		/* Apply GC protection for the Event */
-		if(add_index_zval(loop_obj->events, (size_t) event->watcher, event_obj) == FAILURE)
-		{
-			IF_DEBUG(libev_printf("Could not add Event to internal hash\n"));
-			assert(0);
-			
-			RETURN_BOOL(0);
-		}
-		/* Increase refcount because add_index_zval() does not */
-		zval_add_ref(&event_obj);
-		
-		IF_DEBUG(libev_printf("postAdd refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
+		/* GC protection */
+		loop_ref_add(event, loop_obj);
 		
 		RETURN_BOOL(1);
 	}
@@ -1410,10 +1432,8 @@ PHP_METHOD(EventLoop, remove)
 	
 	if(loop_obj->loop && event->watcher && ev_is_active(event->watcher))
 	{
-		IF_DEBUG(libev_printf("preRemove refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
-		
 		/* Check that the event is associated with us */
-		if(zend_hash_index_exists(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
+		if(event_is_in_loop(event, loop_obj))
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
 			
@@ -1430,23 +1450,113 @@ PHP_METHOD(EventLoop, remove)
 		else ev_watcher_action(stop, stat)
 		
 		/* Remove GC protection */
-		/* For some reason does zend_hash_index_del() decrease the zval refcount
-		   so no need to call zval_dtor */
-		if(zend_hash_index_del(Z_ARRVAL_P(loop_obj->events), (size_t) event->watcher) == FAILURE)
-		{
-			IF_DEBUG(libev_printf("Failed to remove Event from EventLoop internal hash\n"));
-			assert(0);
-			
-			RETURN_BOOL(0);
-		}
-		
-		IF_DEBUG(libev_printf("postRemove refcount for Event %ld: %d\n", (size_t) event->watcher, Z_REFCOUNT_P(event_obj)));
+		loop_ref_del(event);
 		
 		RETURN_BOOL(1);
 	}
 	
 	RETURN_BOOL(0);
 }
+
+/**
+ * If the watcher is pending, this function clears its pending status and
+ * returns its revents bitset (as if its callback was invoked). If the watcher
+ * isn't pending it returns 0, or if it is not associated with this EventLoop
+ * it returns false.
+ * 
+ * @return int  revents bitset if pending, 0 if not
+ * @return false  If not associated with this EventLoop, or if the EventLoop or
+ *                Event is not initialized
+ */
+PHP_METHOD(EventLoop, clearPending)
+{
+	zval *event_obj;
+	event_object *event;
+	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	int revents = 0;
+	
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
+		return;
+	}
+	
+	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
+	
+	assert(loop_obj->loop);
+	assert(event->watcher);
+	
+	if(loop_obj->loop && event->watcher)
+	{
+		/* Check that the event is associated with us */
+		if( ! event_is_in_loop(event, loop_obj))
+		{
+			IF_DEBUG(libev_printf("Event is not in this EventLoop hash\n"));
+			
+			RETURN_BOOL(0);
+		}
+		
+		revents = ev_clear_pending(loop_obj->loop, event->watcher);
+		
+		/* Inactive event, meaning it is no longer part of the event loop
+		   and must be dtor:ed (most probably a fed event which has never
+		   become active because ev_TYPE_start or ev_run has not been called) */
+		if( ! ev_is_active(event->watcher))
+		{
+			loop_ref_del(event);
+		}
+		
+		RETURN_LONG(revents);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Feeds the given event set into the event loop, as if the specified event
+ * had happened for the specified watcher.
+ * 
+ * The watcher will be GC protected until it has fired or clearPending is
+ * called on it.
+ * 
+ * @param  Event
+ * @return boolean  false if either the EventLoop or Event has not been initialized
+ */
+PHP_METHOD(EventLoop, feedEvent)
+{
+	zval *event_obj;
+	event_object *event;
+	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
+		return;
+	}
+	
+	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
+	
+	assert(loop_obj->loop);
+	assert(event->watcher);
+	
+	/* Only allow Events which are associated with this EventLoop
+	   or those which are not associated with any EventLoop yet */
+	if(loop_obj->loop && event->watcher &&
+		( ! event->evloop || event_is_in_loop(event, loop_obj)))
+	{
+		IF_DEBUG(libev_printf("Feeding event..."));
+		
+		if( ! event->evloop)
+		{
+			loop_ref_add(event, loop_obj);
+		}
+		
+		ev_feed_event(loop_obj->loop, event->watcher, 0);
+		
+		IF_DEBUG(php_printf(" done\n"));
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
 
 #undef ev_watcher_action
 
@@ -1525,6 +1635,8 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, add, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, clearPending, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, feedEvent, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
