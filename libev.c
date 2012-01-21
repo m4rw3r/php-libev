@@ -96,8 +96,7 @@ typedef event_object stat_event_object;
 typedef struct _event_loop_object {
 	zend_object    std;
 	struct ev_loop *loop;
-	event_object   *events_first;
-	event_object   *events_last;  /* Reason for this is to be able to add events fast */
+	event_object   *events; /* Head of the doubly-linked list of associated events */
 } event_loop_object;
 
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
@@ -190,10 +189,10 @@ free_storage(event_loop,
 		ev_loop_destroy(obj->loop);
 	}
 	
-	if(obj->events_first)
+	if(obj->events)
 	{
 		/* Free all in the linked list */
-		event_object *ev = obj->events_first;
+		event_object *ev = obj->events;
 		event_object *tmp;
 		
 		while(ev)

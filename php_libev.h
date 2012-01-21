@@ -87,20 +87,17 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	assert(event_object->this);                              \
 	zval_add_ref(&event_object->this);                       \
 	event_object->evloop = event_loop_object;                \
-	if( ! event_loop_object->events_first) {                 \
+	if( ! event_loop_object->events) {                       \
 		event_object->next = NULL;                           \
 		event_object->prev = NULL;                           \
-		event_loop_object->events_first = event_object;      \
-		event_loop_object->events_last  = event_object;      \
+		event_loop_object->events = event_object;            \
 	}                                                        \
 	else                                                     \
 	{                                                        \
-		assert(event_loop_object->events_first);             \
-		assert(event_loop_object->events_last);              \
-		event_object->prev = event_loop_object->events_last; \
-		event_loop_object->events_last->next = event_object; \
-		event_loop_object->events_last = event_object;       \
-		event_object->next = NULL;                           \
+		event_object->next = event_loop_object->events;      \
+		event_object->prev = NULL;                           \
+		event_loop_object->events->prev = event_object;      \
+		event_loop_object->events = event_object;            \
 	}
 
 /* Removes garbage collection protection by removing the event from the
@@ -119,7 +116,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		else                                                             \
 		{                                                                \
 			/* First of the doubly-linked list */                        \
-			event_object->evloop->events_first = event_object->next;     \
+			event_object->evloop->events = event_object->next;           \
 			event_object->next->prev = NULL;                             \
 		}                                                                \
 	}                                                                    \
@@ -127,13 +124,11 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	{                                                                    \
 		/* Last of the doubly-linked list */                             \
 		event_object->prev->next = NULL;                                 \
-		event_object->evloop->events_last = event_object->prev;          \
 	}                                                                    \
 	else                                                                 \
 	{                                                                    \
 		/* Only elment of the doubly-linked list */                      \
-		event_object->evloop->events_first = NULL;                       \
-		event_object->evloop->events_last  = NULL;                       \
+		event_object->evloop->events = NULL;                             \
 	}                                                                    \
 	event_object->next   = NULL;                                         \
 	event_object->prev   = NULL;                                         \
