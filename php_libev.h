@@ -78,7 +78,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 
 /* Is true if event_object is registered with event_loop_object */
 #define event_is_in_loop(event_object, event_loop_object) \
-	(event_object->evloop->loop == event_loop_object->loop)
+	(event_object->evloop && (event_object->evloop->loop == event_loop_object->loop))
 
 /* Protects event_objects from garbage collection by increasing their
    refcount and storing them in the event_loop_object's doubly-linked
@@ -141,15 +141,15 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	zval_ptr_dtor(&event_object->this)
 
 #if LIBEV_DEBUG > 1
-#  define loop_ref_add(event_object, event_loop_object)      \
-	_loop_ref_add(event_object, event_loop_object);          \
+#  define loop_ref_add(event_object, event_loop_object)       \
+	_loop_ref_add(event_object, event_loop_object);           \
 	libev_printf("Increased refcount on Event 0x%lx to %d\n", \
 		(size_t) event_object->this,          \
 		Z_REFCOUNT_P(event_object->this));
 
 #  define loop_ref_del(event_object)                           \
-	libev_printf("Decreasing refcount on Event 0x%lx to %d\n",  \
-		(size_t) event_object->this,            \
+	libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
+		(size_t) event_object->this,                           \
 		Z_REFCOUNT_P(event_object->this) - 1);                 \
 	_loop_ref_del(event_object);
 #else

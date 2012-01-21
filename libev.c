@@ -205,6 +205,7 @@ free_storage(event_loop,
 			
 			tmp = ev->next;
 			zval_ptr_dtor(&ev->this);
+			/* No need to efree ev, it has been freed by the ev->this destructor */
 			ev = tmp;
 		}
 	}
@@ -1376,6 +1377,7 @@ PHP_METHOD(EventLoop, add)
 	
 	if(loop_obj->loop && event->watcher && ! ev_is_active(event->watcher))
 	{
+		assert( ! event->evloop);
 		object_ce = zend_get_class_entry(zevent);
 		
 		ev_watcher_action(start, io)
@@ -1432,10 +1434,12 @@ PHP_METHOD(EventLoop, remove)
 	
 	if(loop_obj->loop && event->watcher && ev_is_active(event->watcher))
 	{
+		assert(event->evloop);
+		
 		/* Check that the event is associated with us */
 		if(event_is_in_loop(event, loop_obj))
 		{
-			IF_DEBUG(libev_printf("Event is not in this EventLoop's internal hash\n"));
+			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
 			RETURN_BOOL(0);
 		}
@@ -1489,7 +1493,7 @@ PHP_METHOD(EventLoop, clearPending)
 		/* Check that the event is associated with us */
 		if( ! event_is_in_loop(event, loop_obj))
 		{
-			IF_DEBUG(libev_printf("Event is not in this EventLoop hash\n"));
+			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
 			RETURN_BOOL(0);
 		}
