@@ -304,7 +304,7 @@ PHP_METHOD(Event, setCallback)
 PHP_METHOD(Event, invoke)
 {
 	/* Empty dummy-loop pointer */
-	struct ev_loop *loop;
+	struct ev_loop *loop = NULL;
 	int revents = 0;
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -347,8 +347,10 @@ PHP_METHOD(IOEvent, __construct)
 	/* Check if we have the correct flags */
 	if( ! (events & (EV_READ | EV_WRITE)))
 	{
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "events parameter must be at least one of IOEvent::READ or IOEvent::WRITE");
-		RETURN_FALSE;
+		/* TODO: libev-specific exception class here */
+		zend_throw_exception(NULL, "libev\\IOEvent: events parameter must be at least one of IOEvent::READ or IOEvent::WRITE", 1 TSRMLS_DC);
+		
+		return;
 	}
 	
 	/* Attempt to get the file descriptor from the stream */
@@ -356,7 +358,10 @@ PHP_METHOD(IOEvent, __construct)
 	{
 		if(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT | PHP_STREAM_CAST_INTERNAL, (void*)&file_desc, 1) != SUCCESS || file_desc < 0)
 		{
-			RETURN_FALSE;
+			/* TODO: libev-specific exception class here */
+			zend_throw_exception(NULL, "libev\\IOEvent: invalid stream", 1 TSRMLS_DC);
+		
+			return;
 		}
 	}
 	else
@@ -367,9 +372,10 @@ PHP_METHOD(IOEvent, __construct)
 		}
 		else
 		{
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "fd argument must be either valid PHP stream or valid PHP socket resource");
-			
-			RETURN_FALSE;
+			/* TODO: libev-specific exception class here */
+			zend_throw_exception(NULL, "libev\\IOEvent: fd argument must be either valid PHP stream or valid PHP socket resource", 1 TSRMLS_DC);
+		
+			return;
 		}
 	}
 	
