@@ -1436,7 +1436,7 @@ PHP_METHOD(EventLoop, remove)
 		assert(event->evloop);
 		
 		/* Check that the event is associated with us */
-		if(event_is_in_loop(event, loop_obj))
+		if( ! event_is_in_loop(event, loop_obj))
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
