@@ -85,6 +85,9 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
    list, also sets event_object->evloop to event_loop_object */
 #define _loop_ref_add(event_object, event_loop_object)       \
 	assert(event_object->this);                              \
+	assert( ! event_object->evloop);                         \
+	assert( ! event_object->next);                           \
+	assert( ! event_object->prev);                           \
 	zval_add_ref(&event_object->this);                       \
 	event_object->evloop = event_loop_object;                \
 	if( ! event_loop_object->events) {                       \
@@ -105,6 +108,9 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
    zval_ptr_dtor */
 #define _loop_ref_del(event_object)                                      \
 	assert(event_object->evloop);                                        \
+	assert(event_object->watcher);                                       \
+	assert( ! event_is_active(event_object));                            \
+	assert( ! event_is_pending(event_object));                           \
 	if(event_object->next)                                               \
 	{                                                                    \
 		if(event_object->prev)                                           \
@@ -116,6 +122,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		else                                                             \
 		{                                                                \
 			/* First of the doubly-linked list */                        \
+			assert(event_object->evloop->events);                        \
 			event_object->evloop->events = event_object->next;           \
 			event_object->next->prev = NULL;                             \
 		}                                                                \
@@ -123,11 +130,13 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	else if(event_object->prev)                                          \
 	{                                                                    \
 		/* Last of the doubly-linked list */                             \
+		assert(event_object->prev->next);                                \
 		event_object->prev->next = NULL;                                 \
 	}                                                                    \
 	else                                                                 \
 	{                                                                    \
 		/* Only elment of the doubly-linked list */                      \
+		assert(event_object->evloop->events);                            \
 		event_object->evloop->events = NULL;                             \
 	}                                                                    \
 	event_object->next   = NULL;                                         \
