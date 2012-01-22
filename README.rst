@@ -248,6 +248,26 @@ when the EventLoop object is Garbage Collected.
 
 Removes the event from the event loop, will skip all pending events on it too.
 
+**boolean EventLoop::clearPending(libev\Event)**
+
+If the watcher is pending, this function clears its pending status and
+returns its revents bitset (as if its callback was invoked). If the watcher
+isn't pending it returns 0, or if it is not associated with this EventLoop
+it returns false.
+
+**boolean EventLoop::feedEvent(libev\Event)**
+
+Feeds the given event set into the event loop, as if the specified event
+had happened for the specified watcher.
+
+The watcher will be GC protected until it has fired or clearPending is called
+on it (unless you feed it again in the callback or add() it to an event loop
+it won't accidentally be freed).
+
+**NOTE:** As of libev 4.04; If you feed an event in the callback of a fed event,
+the newly fed event will be invoked before any other events (except other
+fed events). So do NOT create loops by re-feeding an event into the EventLoop
+
 
 ``libev\Event``
 ---------------

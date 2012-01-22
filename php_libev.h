@@ -87,6 +87,13 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	event_object->watcher->data = event_object;          \
 	ev_##type##_init((ev_##type *)event_object->watcher, event_callback, __VA_ARGS__)
 
+/* "Returns" true if the event watcher is active */
+#define event_is_active(event_object)   ev_is_active(event_object->watcher)
+/* "Returns" true if the event watcher is pending */
+#define event_is_pending(event_object)  ev_is_pending(event_object->watcher)
+/* "Returns" true if the event is associated with a loop */
+#define event_has_loop(event_object)    (event_object->evloop)
+
 /* Is true if event_object is registered with event_loop_object */
 #define event_is_in_loop(event_object, event_loop_object) \
 	(event_object->evloop && (event_object->evloop->loop == event_loop_object->loop))
@@ -159,12 +166,12 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 #  define loop_ref_add(event_object, event_loop_object)       \
 	_loop_ref_add(event_object, event_loop_object);           \
 	libev_printf("Increased refcount on Event 0x%lx to %d\n", \
-		(size_t) event_object->this,          \
+		(unsigned long)((size_t) event_object->this),         \
 		Z_REFCOUNT_P(event_object->this));
 
 #  define loop_ref_del(event_object)                           \
 	libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
-		(size_t) event_object->this,                           \
+		(unsigned long)((size_t) event_object->this),          \
 		Z_REFCOUNT_P(event_object->this) - 1);                 \
 	_loop_ref_del(event_object);
 #else

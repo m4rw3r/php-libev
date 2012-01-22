@@ -198,8 +198,8 @@ free_storage(event_loop,
 		while(ev)
 		{
 			assert(ev->this);
-			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%x to %d\n",
-				(unsigned int) (size_t) ev->this,
+			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%lx to %d\n",
+				(unsigned long) (size_t) ev->this,
 				Z_REFCOUNT_P(ev->this) - 1));
 			
 			tmp = ev->next;
@@ -239,7 +239,7 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 		}
 	}
 	
-	if(loop && ! ev_is_active(w))
+	if(loop && ! ev_is_active(w) && ! ev_is_pending(w))
 	{
 		event = (event_object *)w->data;
 		
@@ -270,7 +270,7 @@ PHP_METHOD(Event, isActive)
 	
 	if(obj->watcher)
 	{
-		RETURN_BOOL(ev_is_active(obj->watcher));
+		RETURN_BOOL(event_is_active(obj));
 	}
 	
 	RETURN_NULL();
@@ -938,6 +938,8 @@ PHP_METHOD(EventLoop, __construct)
 {
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	assert( ! obj->loop);
+	
 	/* TODO: Do we need to be able to change the parameter to ev_loop_new() here? */
 	obj->loop = ev_loop_new(EVFLAG_AUTO);
 	
@@ -1356,9 +1358,21 @@ PHP_METHOD(EventLoop, add)
 	assert(loop_obj->loop);
 	assert(event->watcher);
 	
-	if(loop_obj->loop && event->watcher && ! ev_is_active(event->watcher))
+	/* Check so the event is not associated with any EventLoop, also needs to check
+	   for active, no need to perform logic if it already is started */
+	if(loop_obj->loop && event->watcher && ! event_is_active(event))
 	{
-		assert( ! event->evloop);
+		if(event_has_loop(event))
+		{
+			if( ! event_is_in_loop(event, loop_obj))
+			{
+				/* Attempting to add a fed event to this EventLoop which
+				   has been fed to another loop */
+				IF_DEBUG(libev_printf("Attempting to add() an event already associated with another EventLoop\n"));
+				RETURN_BOOL(0);
+			}
+		}
+		
 		object_ce = zend_get_class_entry(zevent);
 		
 		ev_watcher_action(start, io)
@@ -1381,8 +1395,11 @@ PHP_METHOD(EventLoop, add)
 		}
 		else ev_watcher_action(start, stat)
 		
-		/* GC protection */
-		loop_ref_add(event, loop_obj);
+		if( ! event_has_loop(event))
+		{
+			/* GC protection */
+			loop_ref_add(event, loop_obj);
+		}
 		
 		RETURN_BOOL(1);
 	}
@@ -1434,7 +1451,7 @@ PHP_METHOD(EventLoop, remove)
 		else ev_watcher_action(stop, child)
 		else ev_watcher_action(stop, stat)
 		
-		/* Remove GC protection */
+		/* Remove GC protection, no longer active or pending */
 		loop_ref_del(event);
 		
 		RETURN_BOOL(1);
@@ -1443,12 +1460,15 @@ PHP_METHOD(EventLoop, remove)
 	RETURN_BOOL(0);
 }
 
+#undef ev_watcher_action
+
 /**
  * If the watcher is pending, this function clears its pending status and
  * returns its revents bitset (as if its callback was invoked). If the watcher
  * isn't pending it returns 0, or if it is not associated with this EventLoop
  * it returns false.
  * 
+ * @param  Event
  * @return int  revents bitset if pending, 0 if not
  * @return false  If not associated with this EventLoop, or if the EventLoop or
  *                Event is not initialized
@@ -1483,7 +1503,7 @@ PHP_METHOD(EventLoop, clearPending)
 		
 		/* Inactive event, meaning it is no longer part of the event loop
 		   and must be dtor:ed (most probably a fed event which has never
-		   become active because ev_TYPE_start or ev_run has not been called) */
+		   become active because ev_TYPE_start has not been called) */
 		if( ! ev_is_active(event->watcher))
 		{
 			loop_ref_del(event);
@@ -1499,8 +1519,16 @@ PHP_METHOD(EventLoop, clearPending)
  * Feeds the given event set into the event loop, as if the specified event
  * had happened for the specified watcher.
  * 
- * The watcher will be GC protected until it has fired or clearPending is
- * called on it.
+ * The watcher will be GC protected until it has fired or clearPending is called
+ * on it (unless you feed it again in the callback or add() it to an event loop
+ * it won't accidentally be freed).
+ * 
+ * NOTE: As of libev 4.0.4; If you feed an event in the callback of a fed event,
+ *       the newly fed event will be invoked before any other events (except other
+ *       fed events). So do NOT create loops by re-feeding an event into the EventLoop
+ *       as that loop will block just as much as a normal loop.
+ * 
+ * TODO: Add note about AsyncEvent when AsyncEvent is implemented
  * 
  * @param  Event
  * @return boolean  false if either the EventLoop or Event has not been initialized
@@ -1523,11 +1551,13 @@ PHP_METHOD(EventLoop, feedEvent)
 	/* Only allow Events which are associated with this EventLoop
 	   or those which are not associated with any EventLoop yet */
 	if(loop_obj->loop && event->watcher &&
-		( ! event->evloop || event_is_in_loop(event, loop_obj)))
+		( ! event_has_loop(event) || event_is_in_loop(event, loop_obj)))
 	{
-		IF_DEBUG(libev_printf("Feeding event..."));
+		IF_DEBUG(libev_printf("Feeding event with pending %d and active %d...",
+			event_is_pending(event), event_is_active(event)));
 		
-		if( ! event->evloop)
+		/* The event might already have a loop, no need to increase refcount */
+		if( ! event_has_loop(event))
 		{
 			loop_ref_add(event, loop_obj);
 		}
@@ -1541,9 +1571,6 @@ PHP_METHOD(EventLoop, feedEvent)
 	
 	RETURN_BOOL(0);
 }
-
-
-#undef ev_watcher_action
 
 /* TODO: Implement EventLoop::getEvents() or something like that? */
 
