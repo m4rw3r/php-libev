@@ -475,6 +475,34 @@ PHP_METHOD(TimerEvent, getRepeat)
 }
 
 /**
+ * Sets the new repeat value, will be used every time the watcher times out,
+ * or TimerEvent::again() is called.
+ * 
+ * @param  double    timeout, in seconds, 0 = no-repeat
+ * @return booelean  false if the object is not initialized
+ */
+PHP_METHOD(TimerEvent, setRepeat)
+{
+	double repeat = 0.;
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &repeat) != SUCCESS) {
+		return;
+	}
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher)
+	{
+		((ev_timer *)obj->watcher)->repeat = repeat;
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
  * Returns the time from the loop start until the first triggering of this TimerEvent.
  * 
  * @return double
@@ -495,10 +523,66 @@ PHP_METHOD(TimerEvent, getAfter)
 	
 	RETURN_BOOL(0);
 }
-	
 
-/* TODO: implement support for ev_timer_again(loop, ev_timer*) ? */
-/* TODO: implement support for ev_timer_remaining(loop, ev_timer*) ? */
+/**
+ * This will act as if the timer timed out and restarts it again if it is repeating.
+ * 
+ * The exact semantics are:
+ *  * If the timer is pending, its pending status is cleared.
+ *  * If the timer is started but non-repeating, stop it (as if it timed out).
+ *  * If the timer is repeating, either start it if necessary (with the repeat value),
+ *    or reset the running timer to the repeat value.
+ * 
+ * See <http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod#Be_smart_about_timeouts>
+ * for more information.
+ * 
+ * @return boolean  false if it is not associated with an EventLoop object
+ *                  or event is uninitialized
+ */
+PHP_METHOD(TimerEvent, again)
+{
+	event_object *event_obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(event_obj->watcher);
+	
+	if(event_obj->watcher && event_has_loop(event_obj))
+	{
+		ev_timer_again(event_obj->evloop->loop, (ev_timer *)event_obj->watcher);
+		
+		if( ! event_is_active(event_obj) && ! event_is_pending(event_obj))
+		{
+			/* No longer referenced by libev, so remove GC protection */
+			IF_DEBUG(libev_printf("ev_timer_again() stopped non-repeating timer\n"));
+			loop_ref_del(event_obj);
+		}
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Returns the remaining time until a timer fires, relative to the event loop
+ * time.
+ * 
+ * @return double
+ * @return false   if the TimerEvent is not associated with any EventLoop
+ */
+PHP_METHOD(TimerEvent, getRemaining)
+{
+	event_object *event_obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(event_obj->watcher);
+	
+	if(event_obj->watcher && event_has_loop(event_obj))
+	{
+		RETURN_DOUBLE(ev_timer_remaining(event_obj->evloop->loop, (ev_timer *)event_obj->watcher));
+	}
+	
+	RETURN_BOOL(0);
+}
+
 
 /**
  * Schedules an event (or a repeating series of events) at a specific point
@@ -1593,7 +1677,10 @@ static const function_entry io_event_methods[] = {
 static const function_entry timer_event_methods[] = {
 	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(TimerEvent, getRepeat, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(TimerEvent, setRepeat, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(TimerEvent, getAfter, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(TimerEvent, again, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(TimerEvent, getRemaining, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
