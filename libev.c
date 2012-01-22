@@ -423,10 +423,7 @@ PHP_METHOD(IOEvent, __construct)
 	
 	event_object_prepare(obj, zcallback);
 	
-	obj->watcher = emalloc(sizeof(ev_io));
-	memset(obj->watcher, 0, sizeof(ev_io));
-	obj->watcher->data = obj;
-	ev_io_init((ev_io *)obj->watcher, event_callback, (int)file_desc, (int)events);
+	event_create_watcher(obj, io, (int) file_desc, (int) events);
 }
 
 
@@ -454,10 +451,7 @@ PHP_METHOD(TimerEvent, __construct)
 	
 	event_object_prepare(obj, callback);
 	
-	obj->watcher = emalloc(sizeof(ev_timer));
-	memset(obj->watcher, 0, sizeof(ev_timer));
-	obj->watcher->data = obj;
-	ev_timer_init((ev_timer *)obj->watcher, event_callback, after, repeat);
+	event_create_watcher(obj, timer, after, repeat);
 }
 
 /**
@@ -542,11 +536,8 @@ PHP_METHOD(PeriodicEvent, __construct)
 	check_callable(callback, func_name);
 	
 	event_object_prepare(obj, callback);
-
-	obj->watcher = emalloc(sizeof(ev_periodic));
-	memset(obj->watcher, 0, sizeof(ev_periodic));
-	obj->watcher->data = obj;
-	ev_periodic_init((ev_periodic *)obj->watcher, event_callback, after, repeat, 0);
+	
+	event_create_watcher(obj, periodic, after, repeat, 0);
 }
 
 /**
@@ -654,10 +645,7 @@ PHP_METHOD(SignalEvent, __construct)
 	
 	event_object_prepare(obj, callback);
 	
-	obj->watcher = emalloc(sizeof(ev_signal));
-	memset(obj->watcher, 0, sizeof(ev_signal));
-	obj->watcher->data = obj;
-	ev_signal_init((ev_signal *)obj->watcher, event_callback, (int) signo);
+	event_create_watcher(obj, signal, (int) signo);
 }
 
 
@@ -687,10 +675,7 @@ PHP_METHOD(ChildEvent, __construct)
 	
 	event_object_prepare(obj, callback);
 	
-	obj->watcher = emalloc(sizeof(ev_child));
-	memset(obj->watcher, 0, sizeof(ev_child));
-	obj->watcher->data = obj;
-	ev_child_init((ev_child *)obj->watcher, event_callback, (int)pid, (int)trace);
+	event_create_watcher(obj, child, (int) pid, (int) trace);
 }
 
 /**
@@ -819,10 +804,7 @@ PHP_METHOD(StatEvent, __construct)
 	
 	event_object_prepare(obj, callback);
 	
-	obj->watcher = emalloc(sizeof(ev_stat));
-	memset(obj->watcher, 0, sizeof(ev_stat));
-	obj->watcher->data = obj;
-	ev_stat_init((ev_stat *)obj->watcher, event_callback, stat_path, interval);
+	event_create_watcher(obj, stat, stat_path, interval);
 }
 
 /**

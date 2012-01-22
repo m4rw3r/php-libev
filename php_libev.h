@@ -68,13 +68,24 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	return 0;
 }
 
-/* Used to initialize the object storage pointer in __construct */
+/* Used to initialize the object storage pointer in __construct
+   event_object_prepare(event_object *, zval *) */
 #define event_object_prepare(event_object_ptr, zcallback)                                 \
 	event_object_ptr = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC); \
 	zval_add_ref(&zcallback);                                                             \
 	event_object_ptr->callback = zcallback;                                               \
 	event_object_ptr->this     = getThis();                                               \
 	event_object_ptr->evloop   = NULL
+	
+/* Allocates and initializes the watcher of the specified type (io, time, ...)
+   and passes __VA_ARGS__ after the callback parameter of ev_TYPE_init
+   event_create_watcher(event_object *, TYPE, ...) */
+#define event_create_watcher(event_object, type, ...)    \
+	assert( ! event_object->watcher);                    \
+	event_object->watcher = emalloc(sizeof(ev_##type));  \
+	memset(event_object->watcher, 0, sizeof(ev_##type)); \
+	event_object->watcher->data = event_object;          \
+	ev_##type##_init((ev_##type *)event_object->watcher, event_callback, __VA_ARGS__)
 
 /* Is true if event_object is registered with event_loop_object */
 #define event_is_in_loop(event_object, event_loop_object) \
