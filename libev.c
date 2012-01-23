@@ -72,6 +72,7 @@ zend_class_entry *periodic_event_ce;
 zend_class_entry *signal_event_ce;
 zend_class_entry *child_event_ce;
 zend_class_entry *stat_event_ce;
+zend_class_entry *idle_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -1078,6 +1079,29 @@ PHP_METHOD(StatEvent, getPrev)
 }
 
 
+PHP_METHOD(IdleEvent, __construct)
+{
+	zval *callback;
+	event_object *obj;
+	char *func_name;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
+		return;
+	}
+	
+	CHECK_CALLABLE(callback, func_name);
+	
+	EVENT_OBJECT_PREPARE(obj, callback);
+	
+	/* EVENT_CREATE_WATCHER(obj, idle): */
+	assert( ! obj->watcher);
+	obj->watcher = emalloc(sizeof(ev_idle));
+	memset(obj->watcher, 0, sizeof(ev_idle));
+	obj->watcher->data = obj;
+	ev_idle_init((ev_idle *)obj->watcher, event_callback);
+}
+
+
 /**
  * Normal constructor for EventLoop instance.
  */
@@ -1795,6 +1819,11 @@ static const function_entry stat_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
+static const function_entry idle_event_methods[] = {
+	ZEND_ME(IdleEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	{NULL, NULL, NULL}
+};
+
 static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, getDefaultLoop, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC | ZEND_ACC_FINAL)
@@ -1925,6 +1954,11 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\StatEvent", stat_event_methods);
 	stat_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	stat_event_ce->create_object = stat_event_create_handler;
+	
+	/* libev\IdleEvent */
+	INIT_CLASS_ENTRY(ce, "libev\\IdleEvent", idle_event_methods);
+	idle_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	idle_event_ce->create_object = event_create_handler;
 	
 	
 	/* libev\EventLoop */
