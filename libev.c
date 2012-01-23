@@ -104,7 +104,28 @@ typedef struct _event_loop_object {
 zval *default_event_loop_object = NULL;
 
 
-#define create_handler(name) zend_object_value name##_create_handler(zend_class_entry *type TSRMLS_DC)\
+static int php_event_stop(event_object *obj)
+{
+	if(obj->watcher && EVENT_HAS_LOOP(obj) && (EVENT_IS_ACTIVE(obj) || EVENT_IS_PENDING(obj)))
+	{
+		EV_WATCHER_ACTION(obj, obj->evloop, stop, io)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, timer)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, periodic)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, signal)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, child)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, stat)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, idle)
+		
+		LOOP_REF_DEL(obj);
+		
+		return 1;
+	}
+	
+	return 0;
+}
+
+
+#define CREATE_HANDLER(name) zend_object_value name##_create_handler(zend_class_entry *type TSRMLS_DC)\
 {                                                                                                \
 	IF_DEBUG(libev_printf("Allocating " #name "_object..."));                                    \
 	                                                                                             \
@@ -150,6 +171,15 @@ FREE_STORAGE(event,
 	assert(obj->callback);
 	assert(obj->watcher);
 	
+	if(obj->evloop)
+	{
+		IF_DEBUG(php_printf(" WARNING freeing active: %d, pending: %d with evloop link ",
+			EVENT_IS_ACTIVE(obj), EVENT_IS_PENDING(obj)));
+		/* TODO: Stacktrace PHP, and see why obj->this got a refcount of 0
+		   despite being attached to an EventLoop */
+		php_event_stop(obj);
+	}
+	
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
@@ -161,6 +191,7 @@ FREE_STORAGE(event,
 	}
 	
 	/* No need to free obj->this, it is already done */
+	IF_DEBUG(php_printf(" freed event 0x%lx ", (size_t) obj->this));
 )
 
 FREE_STORAGE(stat_event,
@@ -181,6 +212,7 @@ FREE_STORAGE(stat_event,
 	}
 	
 	/* No need to free obj->this, it is already done */
+	IF_DEBUG(libev_printf("Freed event 0x%lx\n", (size_t) obj->this));
 )
 
 FREE_STORAGE(event_loop,
@@ -195,6 +227,7 @@ FREE_STORAGE(event_loop,
 		
 		while(ev)
 		{
+			php_printf("Freeing event 0x%lx\n", (size_t) ev->this);
 			assert(ev->this);
 			assert(ev->evloop);
 			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%lx to %d\n",
@@ -408,21 +441,7 @@ PHP_METHOD(Event, stop)
 	
 	assert(obj->watcher);
 	
-	if(obj->watcher && event_has_loop(obj) && (event_is_active(obj) || event_is_pending(obj)))
-	{
-		ev_watcher_action(obj, obj->evloop, stop, io)
-		else ev_watcher_action(obj, obj->evloop, stop, timer)
-		else ev_watcher_action(obj, obj->evloop, stop, periodic)
-		else ev_watcher_action(obj, obj->evloop, stop, signal)
-		else ev_watcher_action(obj, obj->evloop, stop, child)
-		else ev_watcher_action(obj, obj->evloop, stop, stat)
-		
-		loop_ref_del(obj);
-		
-		RETURN_BOOL(1);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_BOOL(php_event_stop(obj));
 }
 
 
@@ -1925,9 +1944,17 @@ static const function_entry event_loop_methods[] = {
 	{NULL, NULL, NULL}
 };
 
+static void *libevrealloc(void *ptr, size_t size)
+{
+	/* php_printf("realloc(0x%lx, %ld)\n", (size_t) ptr, size); */
+	if(size) { return erealloc(ptr, size); } else if(ptr) { efree(ptr); } return 0;
+}
 
 PHP_MINIT_FUNCTION(libev)
 {
+	/* Change the allocator for libev */
+	ev_set_allocator(libevrealloc);
+	
 	zend_class_entry ce;
 	/* Init generic object handlers for Event objects, prevent clone */
 	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
