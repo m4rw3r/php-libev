@@ -73,6 +73,7 @@ zend_class_entry *signal_event_ce;
 zend_class_entry *child_event_ce;
 zend_class_entry *stat_event_ce;
 zend_class_entry *idle_event_ce;
+zend_class_entry *async_event_ce;
 zend_class_entry *event_loop_ce;
 
 
@@ -115,6 +116,7 @@ static int php_event_stop(event_object *obj)
 		else EV_WATCHER_ACTION(obj, obj->evloop, stop, child)
 		else EV_WATCHER_ACTION(obj, obj->evloop, stop, stat)
 		else EV_WATCHER_ACTION(obj, obj->evloop, stop, idle)
+		else EV_WATCHER_ACTION(obj, obj->evloop, stop, async)
 		
 		LOOP_REF_DEL(obj);
 		
@@ -243,6 +245,7 @@ FREE_STORAGE(event_loop,
 				else EV_WATCHER_ACTION(ev, ev->evloop, stop, child)
 				else EV_WATCHER_ACTION(ev, ev->evloop, stop, stat)
 				else EV_WATCHER_ACTION(ev, ev->evloop, stop, idle)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, async)
 			}
 			
 			tmp = ev->next;
@@ -377,6 +380,12 @@ static const function_entry stat_event_methods[] = {
 
 static const function_entry idle_event_methods[] = {
 	ZEND_ME(IdleEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	{NULL, NULL, NULL}
+};
+
+static const function_entry async_event_methods[] = {
+	ZEND_ME(AsyncEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	ZEND_ME(AsyncEvent, send, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -525,6 +534,11 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\IdleEvent", idle_event_methods);
 	idle_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	idle_event_ce->create_object = event_create_handler;
+	
+	/* libev\AsyncEvent */
+	INIT_CLASS_ENTRY(ce, "libev\\AsyncEvent", async_event_methods);
+	async_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	async_event_ce->create_object = event_create_handler;
 	
 	
 	/* libev\EventLoop */

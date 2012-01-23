@@ -794,10 +794,41 @@ PHP_METHOD(IdleEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	/* EVENT_CREATE_WATCHER(obj, idle): */
-	assert( ! obj->watcher);
-	obj->watcher = emalloc(sizeof(ev_idle));
-	memset(obj->watcher, 0, sizeof(ev_idle));
-	obj->watcher->data = obj;
-	ev_idle_init((ev_idle *)obj->watcher, event_callback);
+	EVENT_CREATE_WATCHER2(obj, idle);
 }
+
+
+PHP_METHOD(AsyncEvent, __construct)
+{
+	zval *callback;
+	event_object *obj;
+	char *func_name;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
+		return;
+	}
+	
+	CHECK_CALLABLE(callback, func_name);
+	
+	EVENT_OBJECT_PREPARE(obj, callback);
+	
+	EVENT_CREATE_WATCHER2(obj, async);
+}
+
+PHP_METHOD(AsyncEvent, send)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher && EVENT_HAS_LOOP(obj))
+	{
+		ev_async_send(obj->evloop->loop, (ev_async*)obj->watcher);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/* TODO: Implement ev_async_pending? */

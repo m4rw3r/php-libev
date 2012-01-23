@@ -528,6 +528,7 @@ PHP_METHOD(EventLoop, add)
 		}
 		else EV_WATCHER_ACTION(event, loop_obj, start, stat)
 		else EV_WATCHER_ACTION(event, loop_obj, start, idle)
+		else EV_WATCHER_ACTION(event, loop_obj, start, async)
 		
 		if( ! EVENT_HAS_LOOP(event))
 		{
@@ -582,6 +583,7 @@ PHP_METHOD(EventLoop, remove)
 		else EV_WATCHER_ACTION(event, loop_obj, stop, child)
 		else EV_WATCHER_ACTION(event, loop_obj, stop, stat)
 		else EV_WATCHER_ACTION(event, loop_obj, stop, idle)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, async)
 		
 		/* Remove GC protection, no longer active or pending */
 		LOOP_REF_DEL(event);

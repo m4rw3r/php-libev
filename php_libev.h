@@ -89,6 +89,12 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	memset(event_object->watcher, 0, sizeof(ev_##type)); \
 	event_object->watcher->data = event_object;          \
 	ev_##type##_init((ev_##type *)event_object->watcher, event_callback, __VA_ARGS__)
+#define EVENT_CREATE_WATCHER2(event_object, type)         \
+	assert( ! event_object->watcher);                    \
+	event_object->watcher = emalloc(sizeof(ev_##type));  \
+	memset(event_object->watcher, 0, sizeof(ev_##type)); \
+	event_object->watcher->data = event_object;          \
+	ev_##type##_init((ev_##type *)event_object->watcher, event_callback)
 
 /* "Returns" true if the event watcher is active */
 #define EVENT_IS_ACTIVE(event_object)   ev_is_active(event_object->watcher)
