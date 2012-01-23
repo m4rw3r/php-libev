@@ -127,7 +127,7 @@ zval *default_event_loop_object = NULL;
 	return retval;                                                                               \
 }
 
-#define free_storage(name, code) void name##_free_storage(void *object TSRMLS_DC) \
+#define FREE_STORAGE(name, code) void name##_free_storage(void *object TSRMLS_DC) \
 {                                                                                 \
 	IF_DEBUG(libev_printf("Freeing " #name "_object..."));                        \
 	                                                                              \
@@ -144,7 +144,7 @@ zval *default_event_loop_object = NULL;
 	IF_DEBUG(php_printf("done\n"));                                               \
 }
 
-free_storage(event,
+FREE_STORAGE(event,
 	
 	assert(obj->callback);
 	assert(obj->watcher);
@@ -162,7 +162,7 @@ free_storage(event,
 	/* No need to free obj->this, it is already done */
 )
 
-free_storage(stat_event,
+FREE_STORAGE(stat_event,
 	
 	assert(obj->callback);
 	assert(obj->watcher);
@@ -182,7 +182,7 @@ free_storage(stat_event,
 	/* No need to free obj->this, it is already done */
 )
 
-free_storage(event_loop,
+FREE_STORAGE(event_loop,
 	
 	assert(obj->loop);
 	
@@ -202,12 +202,13 @@ free_storage(event_loop,
 			
 			if(ev->evloop)
 			{
-				ev_watcher_action(ev, ev->evloop, stop, io)
-				else ev_watcher_action(ev, ev->evloop, stop, timer)
-				else ev_watcher_action(ev, ev->evloop, stop, periodic)
-				else ev_watcher_action(ev, ev->evloop, stop, signal)
-				else ev_watcher_action(ev, ev->evloop, stop, child)
-				else ev_watcher_action(ev, ev->evloop, stop, stat)
+				EV_WATCHER_ACTION(ev, ev->evloop, stop, io)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, timer)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, periodic)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, signal)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, child)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, stat)
+				else EV_WATCHER_ACTION(ev, ev->evloop, stop, idle)
 			}
 			
 			tmp = ev->next;
@@ -243,12 +244,9 @@ free_storage(event_loop,
 	}
 )
 
-create_handler(event)
-create_handler(stat_event)
-create_handler(event_loop)
-
-#undef create_handler
-#undef free_storage
+CREATE_HANDLER(event)
+CREATE_HANDLER(stat_event)
+CREATE_HANDLER(event_loop)
 
 /**
  * Generic event callback which will call the associated PHP callback.
@@ -279,7 +277,7 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 	
 	if(loop && event->evloop && ! ev_is_active(w) && ! ev_is_pending(w) )
 	{
-		loop_ref_del(event);
+		LOOP_REF_DEL(event);
 	}
 }
 
@@ -306,7 +304,7 @@ PHP_METHOD(Event, isActive)
 	
 	if(obj->watcher)
 	{
-		RETURN_BOOL(event_is_active(obj));
+		RETURN_BOOL(EVENT_IS_ACTIVE(obj));
 	}
 	
 	RETURN_NULL();
@@ -351,7 +349,7 @@ PHP_METHOD(Event, setCallback)
 		return;
 	}
 	
-	check_callable(zcallback, func_name);
+	CHECK_CALLABLE(zcallback, func_name);
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -484,11 +482,11 @@ PHP_METHOD(IOEvent, __construct)
 		}
 	}
 	
-	check_callable(zcallback, func_name);
+	CHECK_CALLABLE(zcallback, func_name);
 	
-	event_object_prepare(obj, zcallback);
+	EVENT_OBJECT_PREPARE(obj, zcallback);
 	
-	event_create_watcher(obj, io, (int) file_desc, (int) events);
+	EVENT_CREATE_WATCHER(obj, io, (int) file_desc, (int) events);
 }
 
 
@@ -512,11 +510,11 @@ PHP_METHOD(TimerEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name);
+	CHECK_CALLABLE(callback, func_name);
 	
-	event_object_prepare(obj, callback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	event_create_watcher(obj, timer, after, repeat);
+	EVENT_CREATE_WATCHER(obj, timer, after, repeat);
 }
 
 /**
@@ -610,15 +608,15 @@ PHP_METHOD(TimerEvent, again)
 	
 	assert(event_obj->watcher);
 	
-	if(event_obj->watcher && event_has_loop(event_obj))
+	if(event_obj->watcher && EVENT_HAS_LOOP(event_obj))
 	{
 		ev_timer_again(event_obj->evloop->loop, (ev_timer *)event_obj->watcher);
 		
-		if( ! event_is_active(event_obj) && ! event_is_pending(event_obj))
+		if( ! EVENT_IS_ACTIVE(event_obj) && ! EVENT_IS_PENDING(event_obj))
 		{
 			/* No longer referenced by libev, so remove GC protection */
 			IF_DEBUG(libev_printf("ev_timer_again() stopped non-repeating timer\n"));
-			loop_ref_del(event_obj);
+			LOOP_REF_DEL(event_obj);
 		}
 		
 		RETURN_BOOL(1);
@@ -640,7 +638,7 @@ PHP_METHOD(TimerEvent, getRemaining)
 	
 	assert(event_obj->watcher);
 	
-	if(event_obj->watcher && event_has_loop(event_obj))
+	if(event_obj->watcher && EVENT_HAS_LOOP(event_obj))
 	{
 		RETURN_DOUBLE(ev_timer_remaining(event_obj->evloop->loop, (ev_timer *)event_obj->watcher));
 	}
@@ -682,11 +680,11 @@ PHP_METHOD(PeriodicEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name);
+	CHECK_CALLABLE(callback, func_name);
 	
-	event_object_prepare(obj, callback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	event_create_watcher(obj, periodic, after, repeat, 0);
+	EVENT_CREATE_WATCHER(obj, periodic, after, repeat, 0);
 }
 
 /**
@@ -790,11 +788,11 @@ PHP_METHOD(SignalEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name);
+	CHECK_CALLABLE(callback, func_name);
 	
-	event_object_prepare(obj, callback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	event_create_watcher(obj, signal, (int) signo);
+	EVENT_CREATE_WATCHER(obj, signal, (int) signo);
 }
 
 
@@ -820,11 +818,11 @@ PHP_METHOD(ChildEvent, __construct)
 		return;
 	}
 	
-	check_callable(callback, func_name);
+	CHECK_CALLABLE(callback, func_name);
 	
-	event_object_prepare(obj, callback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	event_create_watcher(obj, child, (int) pid, (int) trace);
+	EVENT_CREATE_WATCHER(obj, child, (int) pid, (int) trace);
 }
 
 /**
@@ -945,15 +943,15 @@ PHP_METHOD(StatEvent, __construct)
 	
 	/* TODO: Do we need to respect safe_mode and open_basedir here? */
 	
-	check_callable(callback, func_name);
+	CHECK_CALLABLE(callback, func_name);
 	
 	/* This string needs to be freed on object destruction */
 	stat_path = emalloc(filename_len + 1);
 	memcpy(stat_path, filename, filename_len + 1);
 	
-	event_object_prepare(obj, callback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	event_create_watcher(obj, stat, stat_path, interval);
+	EVENT_CREATE_WATCHER(obj, stat, stat_path, interval);
 }
 
 /**
@@ -1502,11 +1500,11 @@ PHP_METHOD(EventLoop, add)
 	
 	/* Check so the event is not associated with any EventLoop, also needs to check
 	   for active, no need to perform logic if it already is started */
-	if(loop_obj->loop && event->watcher && ! event_is_active(event))
+	if(loop_obj->loop && event->watcher && ! EVENT_IS_ACTIVE(event))
 	{
-		if(event_has_loop(event))
+		if(EVENT_HAS_LOOP(event))
 		{
-			if( ! event_is_in_loop(event, loop_obj))
+			if( ! EVENT_IS_IN_LOOP(event, loop_obj))
 			{
 				/* Attempting to add a fed event to this EventLoop which
 				   has been fed to another loop */
@@ -1515,10 +1513,10 @@ PHP_METHOD(EventLoop, add)
 			}
 		}
 		
-		ev_watcher_action(event, loop_obj, start, io)
-		else ev_watcher_action(event, loop_obj, start, timer)
-		else ev_watcher_action(event, loop_obj, start, periodic)
-		else ev_watcher_action(event, loop_obj, start, signal)
+		EV_WATCHER_ACTION(event, loop_obj, start, io)
+		else EV_WATCHER_ACTION(event, loop_obj, start, timer)
+		else EV_WATCHER_ACTION(event, loop_obj, start, periodic)
+		else EV_WATCHER_ACTION(event, loop_obj, start, signal)
 		else if(instance_of_class(event->std.ce, child_event_ce))
 		{
 			/* Special logic, ev_child can only be attached to the default loop */
@@ -1533,12 +1531,13 @@ PHP_METHOD(EventLoop, add)
 			ev_child_start(loop_obj->loop, (ev_child *)event->watcher);
 			IF_DEBUG(libev_printf("Calling ev_child_start\n"));
 		}
-		else ev_watcher_action(event, loop_obj, start, stat)
+		else EV_WATCHER_ACTION(event, loop_obj, start, stat)
+		else EV_WATCHER_ACTION(event, loop_obj, start, idle)
 		
-		if( ! event_has_loop(event))
+		if( ! EVENT_HAS_LOOP(event))
 		{
 			/* GC protection */
-			loop_ref_add(event, loop_obj);
+			LOOP_REF_ADD(event, loop_obj);
 		}
 		
 		RETURN_BOOL(1);
@@ -1574,30 +1573,29 @@ PHP_METHOD(EventLoop, remove)
 		assert(event->evloop);
 		
 		/* Check that the event is associated with us */
-		if( ! event_is_in_loop(event, loop_obj))
+		if( ! EVENT_IS_IN_LOOP(event, loop_obj))
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
 			RETURN_BOOL(0);
 		}
 		
-		ev_watcher_action(event, loop_obj, stop, io)
-		else ev_watcher_action(event, loop_obj, stop, timer)
-		else ev_watcher_action(event, loop_obj, stop, periodic)
-		else ev_watcher_action(event, loop_obj, stop, signal)
-		else ev_watcher_action(event, loop_obj, stop, child)
-		else ev_watcher_action(event, loop_obj, stop, stat)
+		EV_WATCHER_ACTION(event, loop_obj, stop, io)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, timer)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, periodic)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, signal)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, child)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, stat)
+		else EV_WATCHER_ACTION(event, loop_obj, stop, idle)
 		
 		/* Remove GC protection, no longer active or pending */
-		loop_ref_del(event);
+		LOOP_REF_DEL(event);
 		
 		RETURN_BOOL(1);
 	}
 	
 	RETURN_BOOL(0);
 }
-
-#undef ev_watcher_action
 
 /**
  * If the watcher is pending, this function clears its pending status and
@@ -1629,7 +1627,7 @@ PHP_METHOD(EventLoop, clearPending)
 	if(loop_obj->loop && event->watcher)
 	{
 		/* Check that the event is associated with us */
-		if( ! event_is_in_loop(event, loop_obj))
+		if( ! EVENT_IS_IN_LOOP(event, loop_obj))
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
@@ -1643,7 +1641,7 @@ PHP_METHOD(EventLoop, clearPending)
 		   become active because ev_TYPE_start has not been called) */
 		if( ! ev_is_active(event->watcher))
 		{
-			loop_ref_del(event);
+			LOOP_REF_DEL(event);
 		}
 		
 		RETURN_LONG(revents);
@@ -1688,15 +1686,15 @@ PHP_METHOD(EventLoop, feedEvent)
 	/* Only allow Events which are associated with this EventLoop
 	   or those which are not associated with any EventLoop yet */
 	if(loop_obj->loop && event->watcher &&
-		( ! event_has_loop(event) || event_is_in_loop(event, loop_obj)))
+		( ! EVENT_HAS_LOOP(event) || EVENT_IS_IN_LOOP(event, loop_obj)))
 	{
 		IF_DEBUG(libev_printf("Feeding event with pending %d and active %d...",
-			event_is_pending(event), event_is_active(event)));
+			EVENT_IS_PENDING(event), EVENT_IS_ACTIVE(event)));
 		
 		/* The event might already have a loop, no need to increase refcount */
-		if( ! event_has_loop(event))
+		if( ! EVENT_HAS_LOOP(event))
 		{
-			loop_ref_add(event, loop_obj);
+			LOOP_REF_ADD(event, loop_obj);
 		}
 		
 		ev_feed_event(loop_obj->loop, event->watcher, 0);

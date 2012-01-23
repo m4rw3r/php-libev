@@ -41,7 +41,7 @@ extern zend_module_entry libev_module_entry;
 #endif
 
 
-#define check_callable(/* zval */ zcallback, /* char * */ tmp) \
+#define CHECK_CALLABLE(/* zval */ zcallback, /* char * */ tmp) \
 	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
 	{                                                          \
 		php_error_docref(NULL TSRMLS_CC, E_WARNING,            \
@@ -62,6 +62,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		{
 			return 1;
 		}
+		
 		instance_ce = instance_ce->parent;
 	}
 	
@@ -69,19 +70,20 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 }
 
 /* Used to initialize the object storage pointer in __construct
-   event_object_prepare(event_object *, zval *) */
-#define event_object_prepare(event_object_ptr, zcallback)                                 \
+   EVENT_OBJECT_PREPARE(event_object *, zval *) */
+#define EVENT_OBJECT_PREPARE(event_object_ptr, zcallback)                                 \
 	event_object_ptr = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC); \
 	zval_add_ref(&zcallback);                                                             \
 	event_object_ptr->callback = zcallback;                                               \
 	/* Do not increase refcount for $this here, as otherwise we have a cycle */           \
 	event_object_ptr->this     = getThis();                                               \
+	IF_DEBUG(libev_printf("Allocated event 0x%lx\n", (size_t) event_object_ptr->this));   \
 	event_object_ptr->evloop   = NULL
 	
 /* Allocates and initializes the watcher of the specified type (io, time, ...)
    and passes __VA_ARGS__ after the callback parameter of ev_TYPE_init
-   event_create_watcher(event_object *, TYPE, ...) */
-#define event_create_watcher(event_object, type, ...)    \
+   EVENT_CREATE_WATCHER(event_object *, TYPE, ...) */
+#define EVENT_CREATE_WATCHER(event_object, type, ...)    \
 	assert( ! event_object->watcher);                    \
 	event_object->watcher = emalloc(sizeof(ev_##type));  \
 	memset(event_object->watcher, 0, sizeof(ev_##type)); \
@@ -89,14 +91,14 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	ev_##type##_init((ev_##type *)event_object->watcher, event_callback, __VA_ARGS__)
 
 /* "Returns" true if the event watcher is active */
-#define event_is_active(event_object)   ev_is_active(event_object->watcher)
+#define EVENT_IS_ACTIVE(event_object)   ev_is_active(event_object->watcher)
 /* "Returns" true if the event watcher is pending */
-#define event_is_pending(event_object)  ev_is_pending(event_object->watcher)
+#define EVENT_IS_PENDING(event_object)  ev_is_pending(event_object->watcher)
 /* "Returns" true if the event is associated with a loop */
-#define event_has_loop(event_object)    (event_object->evloop)
+#define EVENT_HAS_LOOP(event_object)    (event_object->evloop)
 
 /* Is true if event_object is registered with event_loop_object */
-#define event_is_in_loop(event_object, event_loop_object) \
+#define EVENT_IS_IN_LOOP(event_object, event_loop_object) \
 	(event_object->evloop && (event_object->evloop->loop == event_loop_object->loop))
 
 /* Protects event_objects from garbage collection by increasing their
@@ -128,8 +130,8 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 #define _loop_ref_del(event_object)                                      \
 	assert(event_object->evloop);                                        \
 	assert(event_object->watcher);                                       \
-	assert( ! event_is_active(event_object));                            \
-	assert( ! event_is_pending(event_object));                           \
+	assert( ! EVENT_IS_ACTIVE(event_object));                            \
+	assert( ! EVENT_IS_PENDING(event_object));                           \
 	if(event_object->next)                                               \
 	{                                                                    \
 		if(event_object->prev)                                           \
@@ -164,23 +166,23 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	zval_ptr_dtor(&event_object->this)
 
 #if LIBEV_DEBUG > 1
-#  define loop_ref_add(event_object, event_loop_object)       \
+#  define LOOP_REF_ADD(event_object, event_loop_object)       \
 	_loop_ref_add(event_object, event_loop_object);           \
 	libev_printf("Increased refcount on Event 0x%lx to %d\n", \
 		(unsigned long)((size_t) event_object->this),         \
 		Z_REFCOUNT_P(event_object->this));
 
-#  define loop_ref_del(event_object)                           \
+#  define LOOP_REF_DEL(event_object)                           \
 	libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
 		(unsigned long)((size_t) event_object->this),          \
 		Z_REFCOUNT_P(event_object->this) - 1);                 \
 	_loop_ref_del(event_object);
 #else
-#  define loop_ref_add(event_object, event_loop_object) _loop_ref_add(event_object, event_loop_object)
-#  define loop_ref_del(event_object) _loop_ref_del(event_object)
+#  define LOOP_REF_ADD(event_object, event_loop_object) _loop_ref_add(event_object, event_loop_object)
+#  define LOOP_REF_DEL(event_object) _loop_ref_del(event_object)
 #endif
 
-#define ev_watcher_action(event_object, event_loop, action, type)                   \
+#define EV_WATCHER_ACTION(event_object, event_loop, action, type)                   \
 	if(instance_of_class(event_object->std.ce, type##_event_ce))                    \
 	{                                                                               \
 		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));               \
