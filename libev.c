@@ -105,9 +105,15 @@ typedef struct _event_loop_object {
 zval *default_event_loop_object = NULL;
 
 
-static int php_event_stop(event_object *obj)
+/**
+ * Will stop an event if it has an associated event loop and is active or pending,
+ * if force is true it will ignore the active or pending check.
+ * 
+ * @return int
+ */
+static int php_event_stop(event_object *obj, int force)
 {
-	if(obj->watcher && EVENT_HAS_LOOP(obj) && (EVENT_IS_ACTIVE(obj) || EVENT_IS_PENDING(obj)))
+	if(obj->watcher && EVENT_HAS_LOOP(obj) && (EVENT_IS_ACTIVE(obj) || EVENT_IS_PENDING(obj) || force))
 	{
 		EV_WATCHER_ACTION(obj, obj->evloop, stop, io)
 		else EV_WATCHER_ACTION(obj, obj->evloop, stop, timer)
@@ -178,8 +184,9 @@ FREE_STORAGE(event,
 		IF_DEBUG(php_printf(" WARNING freeing active: %d, pending: %d, refcount: %d with evloop link ",
 			EVENT_IS_ACTIVE(obj), EVENT_IS_PENDING(obj), Z_REFCOUNT_P(obj->this)));
 		/* TODO: Stacktrace PHP, and see why obj->this is getting freed despite
-		         being attached to an EventLoop (refcount != 0) */
-		php_event_stop(obj);
+		         being attached to an EventLoop (refcount != 0),
+		         so force-remove it from the evloop for now */
+		php_event_stop(obj, 1);
 	}
 	
 	if(obj->callback)
@@ -194,6 +201,7 @@ FREE_STORAGE(event,
 	
 	/* No need to free obj->this, it is already done */
 	IF_DEBUG(php_printf(" freed event 0x%lx ", (size_t) obj->this));
+	obj->this = NULL;
 )
 
 FREE_STORAGE(stat_event,
@@ -215,6 +223,7 @@ FREE_STORAGE(stat_event,
 	
 	/* No need to free obj->this, it is already done */
 	IF_DEBUG(libev_printf("Freed event 0x%lx\n", (size_t) obj->this));
+	obj->this = NULL;
 )
 
 FREE_STORAGE(event_loop,

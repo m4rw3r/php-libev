@@ -124,7 +124,7 @@ PHP_METHOD(Event, stop)
 	
 	assert(obj->watcher);
 	
-	RETURN_BOOL(php_event_stop(obj));
+	RETURN_BOOL(php_event_stop(obj, 0));
 }
 
 
