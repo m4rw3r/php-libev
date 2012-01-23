@@ -1420,6 +1420,80 @@ PHP_METHOD(EventLoop, breakLoop)
 }
 
 /**
+ * Increases the watcher-reference count on the EventLoop, this is the reverse
+ * of EventLoop::unref()
+ * 
+ * @see EventLoop::unref()
+ * @return boolean
+ */
+PHP_METHOD(EventLoop, ref)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->loop);
+	
+	if(obj->loop)
+	{
+		ev_ref(obj->loop);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * Ref/unref can be used to add or remove a reference count on the event loop:
+ * Every watcher keeps one reference, and as long as the reference count is nonzero,
+ * ev_run will not return on its own.
+ * 
+ * This is useful when you have a watcher that you never intend to unregister,
+ * but that nevertheless should not keep ev_run from returning. In such a case,
+ * call EventLoop::unref after starting, and EventLoop::ref before stopping it.
+ * 
+ * As an example, libev itself uses this for its internal signal pipe:
+ * It is not visible to the libev user and should not keep ev_run from exiting if
+ * no event watchers registered by it are active. It is also an excellent way to do
+ * this for generic recurring timers or from within third-party libraries. Just remember
+ * to unref after start and ref before stop (but only if the watcher wasn't active before,
+ * or was active before, respectively. Note also that libev might stop watchers itself
+ * (e.g. non-repeating timers) in which case you have to EventLoop::ref() in the callback).
+ * 
+ * Example: Create a signal watcher, but keep it from keeping ev_run running when nothing
+ * else is active:
+ * <code>
+ * $sig = new libev\SignalEvent(libev\SignalEvent::SIGINT, function()
+ * {
+ *     // Do something
+ * });
+ * 
+ * $loop->add($sig);
+ * $loop->unref();
+ * 
+ * // For some weird reason we want to unregister the above handler
+ * $loop->ref();
+ * $sig->stop();  // or $loop->remove($sig);
+ * </code>
+ * 
+ * @return boolean
+ */
+PHP_METHOD(EventLoop, unref)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->loop);
+	
+	if(obj->loop)
+	{
+		ev_unref(obj->loop);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
  * Sets the time libev spends waiting for new IO events between loop iterations,
  * default is 0.
  * 
@@ -1838,6 +1912,8 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, resume, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, run, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, breakLoop, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, ref, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, unref, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, setIOCollectInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, setTimeoutCollectInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
