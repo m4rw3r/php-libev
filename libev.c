@@ -1685,7 +1685,35 @@ PHP_METHOD(EventLoop, feedEvent)
 	RETURN_BOOL(0);
 }
 
-/* TODO: Implement EventLoop::getEvents() or something like that? */
+/**
+ * Returns a list of all the events associated with the EventLoop.
+ * 
+ * NOTE: In the case of the default event loop, only events which have
+ *       been added using php-libev will be returned as the others are
+ *       managed by others.
+ * 
+ * @return array
+ */
+PHP_METHOD(EventLoop, getEvents)
+{
+	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	array_init(return_value);
+	
+	event_object *ev = obj->events;
+		
+	while(ev)
+	{
+		assert(ev->this);
+		
+		zval_add_ref(&ev->this);
+		zend_hash_next_index_insert(HASH_OF(return_value), (void *)&ev->this, sizeof(zval *), NULL);
+		
+		ev = ev->next;
+	}
+	
+	return;
+}
 
 
 static const function_entry event_methods[] = {
@@ -1765,6 +1793,7 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, clearPending, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, feedEvent, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(EventLoop, getEvents, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
