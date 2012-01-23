@@ -173,10 +173,10 @@ FREE_STORAGE(event,
 	
 	if(obj->evloop)
 	{
-		IF_DEBUG(php_printf(" WARNING freeing active: %d, pending: %d with evloop link ",
-			EVENT_IS_ACTIVE(obj), EVENT_IS_PENDING(obj)));
-		/* TODO: Stacktrace PHP, and see why obj->this got a refcount of 0
-		   despite being attached to an EventLoop */
+		IF_DEBUG(php_printf(" WARNING freeing active: %d, pending: %d, refcount: %d with evloop link ",
+			EVENT_IS_ACTIVE(obj), EVENT_IS_PENDING(obj), Z_REFCOUNT_P(obj->this)));
+		/* TODO: Stacktrace PHP, and see why obj->this is getting freed despite
+		         being attached to an EventLoop (refcount != 0) */
 		php_event_stop(obj);
 	}
 	
@@ -227,7 +227,7 @@ FREE_STORAGE(event_loop,
 		
 		while(ev)
 		{
-			php_printf("Freeing event 0x%lx\n", (size_t) ev->this);
+			IF_DEBUG(php_printf("Freeing event 0x%lx\n", (size_t) ev->this));
 			assert(ev->this);
 			assert(ev->evloop);
 			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%lx to %d\n",
