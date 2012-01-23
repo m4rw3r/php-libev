@@ -148,7 +148,6 @@ free_storage(event,
 	
 	assert(obj->callback);
 	assert(obj->watcher);
-	assert(obj->this);
 	
 	if(obj->callback)
 	{
@@ -160,17 +159,13 @@ free_storage(event,
 		efree(obj->watcher);
 	}
 	
-	if(obj->this)
-	{
-		zval_ptr_dtor(&obj->this);
-	}
+	/* No need to free obj->this, it is already done */
 )
 
 free_storage(stat_event,
 	
 	assert(obj->callback);
 	assert(obj->watcher);
-	assert(obj->this);
 	
 	if(obj->callback)
 	{
@@ -184,10 +179,7 @@ free_storage(stat_event,
 		efree(obj->watcher);
 	}
 	
-	if(obj->this)
-	{
-		zval_ptr_dtor(&obj->this);
-	}
+	/* No need to free obj->this, it is already done */
 )
 
 free_storage(event_loop,
@@ -266,24 +258,27 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 	/* Note: loop might be null pointer because of Event::invoke() */
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
-	zval retval;
-	event_object *event;
-	
 	assert(w->data);
-	assert(((event_object *)w->data)->callback);
 	
-	if(((event_object *)w->data)->callback)
+	zval retval;
+	zval *args[1];
+	event_object *event = (event_object *) w->data;
+	
+	/* Pass the Event object to the callback */
+	args[0] = event->this;
+	zval_add_ref(&args[0]);
+	
+	assert(event->callback);
+	
+	if(call_user_function(EG(function_table), NULL, event->callback, &retval, 1, args TSRMLS_CC) == SUCCESS)
 	{
-		if(call_user_function(EG(function_table), NULL, ((event_object *)w->data)->callback, &retval, 0, NULL TSRMLS_CC) == SUCCESS)
-		{
-			zval_dtor(&retval);
-		}
+		zval_dtor(&retval);
 	}
 	
-	if(loop && ! ev_is_active(w) && ! ev_is_pending(w))
+	zval_ptr_dtor(&(args[0]));
+	
+	if(loop && event->evloop && ! ev_is_active(w) && ! ev_is_pending(w) )
 	{
-		event = (event_object *)w->data;
-		
 		loop_ref_del(event);
 	}
 }
@@ -395,6 +390,35 @@ PHP_METHOD(Event, invoke)
 	{
 		/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
 		ev_invoke(loop, obj->watcher, revents);
+		
+		RETURN_BOOL(1);
+	}
+	
+	RETURN_BOOL(0);
+}
+
+/**
+ * If the event is associated with any EventLoop (add()ed or feed_event()ed), it
+ * will be stopped and reset.
+ * 
+ * @return boolean
+ */
+PHP_METHOD(Event, stop)
+{
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	assert(obj->watcher);
+	
+	if(obj->watcher && event_has_loop(obj) && (event_is_active(obj) || event_is_pending(obj)))
+	{
+		ev_watcher_action(obj, obj->evloop, stop, io)
+		else ev_watcher_action(obj, obj->evloop, stop, timer)
+		else ev_watcher_action(obj, obj->evloop, stop, periodic)
+		else ev_watcher_action(obj, obj->evloop, stop, signal)
+		else ev_watcher_action(obj, obj->evloop, stop, child)
+		else ev_watcher_action(obj, obj->evloop, stop, stat)
+		
+		loop_ref_del(obj);
 		
 		RETURN_BOOL(1);
 	}
@@ -1723,6 +1747,7 @@ static const function_entry event_methods[] = {
 	ZEND_ME(Event, isPending, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, setCallback, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, invoke, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(Event, stop, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
