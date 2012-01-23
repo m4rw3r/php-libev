@@ -74,6 +74,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	event_object_ptr = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC); \
 	zval_add_ref(&zcallback);                                                             \
 	event_object_ptr->callback = zcallback;                                               \
+	/* Do not increase refcount for $this here, as otherwise we have a cycle */           \
 	event_object_ptr->this     = getThis();                                               \
 	event_object_ptr->evloop   = NULL
 	
@@ -178,6 +179,13 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 #  define loop_ref_add(event_object, event_loop_object) _loop_ref_add(event_object, event_loop_object)
 #  define loop_ref_del(event_object) _loop_ref_del(event_object)
 #endif
+
+#define ev_watcher_action(event_object, event_loop, action, type)                   \
+	if(instance_of_class(event_object->std.ce, type##_event_ce))                    \
+	{                                                                               \
+		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));               \
+		ev_##type##_##action(event_loop->loop, (ev_##type *)event_object->watcher); \
+	}
 
 
 #endif /* PHP_LIBEV_H */

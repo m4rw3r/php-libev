@@ -100,7 +100,7 @@ typedef struct _event_loop_object {
 } event_loop_object;
 
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
-zval *default_event_loop_object;
+zval *default_event_loop_object = NULL;
 
 
 #define create_handler(name) zend_object_value name##_create_handler(zend_class_entry *type TSRMLS_DC)\
@@ -147,30 +147,35 @@ zval *default_event_loop_object;
 free_storage(event,
 	
 	assert(obj->callback);
+	assert(obj->watcher);
+	assert(obj->this);
 	
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
 	}
 	
-	assert(obj->watcher);
-	
 	if(obj->watcher)
 	{
 		efree(obj->watcher);
+	}
+	
+	if(obj->this)
+	{
+		zval_ptr_dtor(&obj->this);
 	}
 )
 
 free_storage(stat_event,
 	
 	assert(obj->callback);
+	assert(obj->watcher);
+	assert(obj->this);
 	
 	if(obj->callback)
 	{
 		zval_ptr_dtor(&obj->callback);
 	}
-	
-	assert(obj->watcher);
 	
 	if(obj->watcher)
 	{
@@ -178,35 +183,71 @@ free_storage(stat_event,
 		efree(((ev_stat *)obj->watcher)->path);
 		efree(obj->watcher);
 	}
+	
+	if(obj->this)
+	{
+		zval_ptr_dtor(&obj->this);
+	}
 )
 
 free_storage(event_loop,
 	
 	assert(obj->loop);
 	
-	if(obj->loop)
-	{
-		ev_loop_destroy(obj->loop);
-	}
-	
 	if(obj->events)
 	{
-		/* Free all in the linked list */
+		/* Stop and free all in the linked list */
 		event_object *ev = obj->events;
 		event_object *tmp;
 		
 		while(ev)
 		{
 			assert(ev->this);
+			assert(ev->evloop);
 			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%lx to %d\n",
 				(unsigned long) (size_t) ev->this,
 				Z_REFCOUNT_P(ev->this) - 1));
 			
+			if(ev->evloop)
+			{
+				ev_watcher_action(ev, ev->evloop, stop, io)
+				else ev_watcher_action(ev, ev->evloop, stop, timer)
+				else ev_watcher_action(ev, ev->evloop, stop, periodic)
+				else ev_watcher_action(ev, ev->evloop, stop, signal)
+				else ev_watcher_action(ev, ev->evloop, stop, child)
+				else ev_watcher_action(ev, ev->evloop, stop, stat)
+			}
+			
 			tmp = ev->next;
-			zval_ptr_dtor(&ev->this);
+			
+			/* Reset the struct */
+			ev->next   = NULL;
+			ev->prev   = NULL;
+			ev->evloop = NULL;
+			
 			/* No need to efree ev, it has been freed by the ev->this destructor */
 			ev = tmp;
 		}
+	}
+	
+	if(obj->loop)
+	{
+		/* If it is the default loop, we need to free its "singleton-zval" as we
+		   already are in the shutdown phase (so no risk of freeing the default
+		   loop too early) and PHP will not free our zval automatically (ie.
+		   its refcount is 1, yet we still happen here, meaning PHP is cleaing
+		   all objects) */
+		if(ev_is_default_loop(obj->loop))
+		{
+			assert(default_event_loop_object);
+			assert(Z_REFCOUNT_P(default_event_loop_object) == 1);
+			
+			IF_DEBUG(php_printf(" freeing default loop "));
+			
+			zval_ptr_dtor(&default_event_loop_object);
+		}
+		
+		ev_loop_destroy(obj->loop);
 	}
 )
 
@@ -1408,12 +1449,6 @@ PHP_METHOD(EventLoop, getPendingCount)
 	RETURN_BOOL(0);
 }
 
-#define ev_watcher_action(action, type)     if(instance_of_class(object_ce, type##_event_ce)) \
-	{                                                                           \
-		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));           \
-		ev_##type##_##action(loop_obj->loop, (ev_##type *)event->watcher);      \
-	}
-
 /**
  * Adds the event to the event loop.
  * 
@@ -1430,7 +1465,6 @@ PHP_METHOD(EventLoop, add)
 	   the Event if it is the only active event */
 	zval *zevent;
 	event_object *event;
-	zend_class_entry *object_ce;
 	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &zevent, event_ce) != SUCCESS) {
@@ -1457,13 +1491,11 @@ PHP_METHOD(EventLoop, add)
 			}
 		}
 		
-		object_ce = zend_get_class_entry(zevent);
-		
-		ev_watcher_action(start, io)
-		else ev_watcher_action(start, timer)
-		else ev_watcher_action(start, periodic)
-		else ev_watcher_action(start, signal)
-		else if(instance_of_class(object_ce, child_event_ce))
+		ev_watcher_action(event, loop_obj, start, io)
+		else ev_watcher_action(event, loop_obj, start, timer)
+		else ev_watcher_action(event, loop_obj, start, periodic)
+		else ev_watcher_action(event, loop_obj, start, signal)
+		else if(instance_of_class(event->std.ce, child_event_ce))
 		{
 			/* Special logic, ev_child can only be attached to the default loop */
 			if( ! ev_is_default_loop(loop_obj->loop))
@@ -1477,7 +1509,7 @@ PHP_METHOD(EventLoop, add)
 			ev_child_start(loop_obj->loop, (ev_child *)event->watcher);
 			IF_DEBUG(libev_printf("Calling ev_child_start\n"));
 		}
-		else ev_watcher_action(start, stat)
+		else ev_watcher_action(event, loop_obj, start, stat)
 		
 		if( ! event_has_loop(event))
 		{
@@ -1502,7 +1534,6 @@ PHP_METHOD(EventLoop, remove)
 {
 	zval *event_obj;
 	event_object *event;
-	zend_class_entry *object_ce;
 	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
@@ -1526,14 +1557,12 @@ PHP_METHOD(EventLoop, remove)
 			RETURN_BOOL(0);
 		}
 		
-		object_ce = zend_get_class_entry(event_obj);
-		
-		ev_watcher_action(stop, io)
-		else ev_watcher_action(stop, timer)
-		else ev_watcher_action(stop, periodic)
-		else ev_watcher_action(stop, signal)
-		else ev_watcher_action(stop, child)
-		else ev_watcher_action(stop, stat)
+		ev_watcher_action(event, loop_obj, stop, io)
+		else ev_watcher_action(event, loop_obj, stop, timer)
+		else ev_watcher_action(event, loop_obj, stop, periodic)
+		else ev_watcher_action(event, loop_obj, stop, signal)
+		else ev_watcher_action(event, loop_obj, stop, child)
+		else ev_watcher_action(event, loop_obj, stop, stat)
 		
 		/* Remove GC protection, no longer active or pending */
 		loop_ref_del(event);
