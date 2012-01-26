@@ -30,6 +30,25 @@
 #ifndef PHP_LIBEV_H
 #define PHP_LIBEV_H 1
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
+#include "ev_custom.h"
+#include "php.h"
+#include "php_ini.h"
+#include "php_streams.h"
+#include "php_network.h"
+#include "ext/sockets/php_sockets.h"
+
+#if LIBEV_DEBUG == 2
+#  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
+#  define IF_DEBUG(x) x
+#else
+#  define IF_DEBUG(x)
+#  define libev_printf(...)
+#endif
+
 #define PHP_LIBEV_EXTNAME "libev"
 #define PHP_LIBEV_EXTVER  "0.1"
 
@@ -37,9 +56,14 @@ extern zend_module_entry libev_module_entry;
 #define phpext_libev_ptr &libev_module_entry
 
 #ifdef ZTS
-#include "TSRM.h"
+#  include "TSRM.h"
 #endif
 
+/* Define NO_REATAIN as 1 to keep libev default behaviour, that it does not
+   retain the active Events beyond their scope */
+#ifndef NO_RETAIN
+#  define NO_RETAIN 0
+#endif
 
 #define CHECK_CALLABLE(/* zval */ zcallback, /* char * */ tmp) \
 	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
@@ -50,6 +74,24 @@ extern zend_module_entry libev_module_entry;
 		RETURN_FALSE;                                          \
 	}                                                          \
 	efree(tmp)
+struct _event_loop_object;
+
+typedef struct event_object {
+	zend_object std;
+	int         eflags;
+	ev_watcher  *watcher;
+	zval        *this;
+	zval        *callback;
+	struct _event_loop_object *loop_obj;
+	struct event_object *next; /* Part of double-linked list of loop_obj->events */
+	struct event_object *prev; /* Part of double-linked list of loop_obj->events */
+} event_object;
+
+typedef struct _event_loop_object {
+	zend_object       std;
+	struct ev_loop    *loop;
+	struct event_object *events; /* Head of the doubly-linked list of associated events */
+} event_loop_object;
 
 
 /* Returns true if the supplied *instance_ce == *ce or if any of *instance_ce's parent

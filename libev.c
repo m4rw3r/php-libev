@@ -28,29 +28,11 @@
  */
 
 /* Debug-level, 1 = assert, 2 = assert + debug messages */
-#define LIBEV_DEBUG 0
+#define LIBEV_DEBUG 1
 
-#if LIBEV_DEBUG == 2
-#  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
-#  define IF_DEBUG(x) x
-#else
-#  define IF_DEBUG(x)
-#  define libev_printf(...)
-#endif
-
-#ifdef HAVE_CONFIG_H
-#  include "config.h"
-#endif
-
-#include "php.h"
-#include "php_ini.h"
-#include "php_streams.h"
-#include "php_network.h"
-#include "ext/sockets/php_sockets.h"
 #include "php_libev.h"
 
-#include <ev.h>
-#include <signal.h>
+/* #include <signal.h> */
 
 /* Override PHP's default debugging behaviour
    if we only want to debug this extension */
@@ -65,41 +47,21 @@ ZEND_GET_MODULE(libev)
 
 
 /* Defining class API */
-zend_class_entry *event_ce;
-zend_class_entry *io_event_ce;
-zend_class_entry *timer_event_ce;
-zend_class_entry *periodic_event_ce;
-zend_class_entry *signal_event_ce;
-zend_class_entry *child_event_ce;
-zend_class_entry *stat_event_ce;
-zend_class_entry *idle_event_ce;
-zend_class_entry *async_event_ce;
-zend_class_entry *event_loop_ce;
+zend_class_entry *event_ce,
+	*io_event_ce,
+	*timer_event_ce,
+	*periodic_event_ce,
+	*signal_event_ce,
+	*child_event_ce,
+	*stat_event_ce,
+	*idle_event_ce,
+	*async_event_ce,
+	*event_loop_ce;
 
 
-zend_object_handlers event_object_handlers;
-zend_object_handlers stat_event_object_handlers;
-zend_object_handlers event_loop_object_handlers;
+zend_object_handlers event_object_handlers,
+	event_loop_object_handlers;
 
-struct _event_loop_object;
-
-typedef struct _event_object {
-	zend_object    std;
-	ev_watcher     *watcher;
-	zval           *this;     /* No need to free *object, PHP does it */
-	zval           *callback;
-	struct _event_loop_object *evloop;
-	struct _event_object   *prev;     /* Part of events doubly linked list on event_loop_object */
-	struct _event_object   *next;     /* Part of events doubly linked list on event_loop_object */
-} event_object;
-
-typedef event_object stat_event_object;
-
-typedef struct _event_loop_object {
-	zend_object    std;
-	struct ev_loop *loop;
-	event_object   *events; /* Head of the doubly-linked list of associated events */
-} event_loop_object;
 
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
 zval *default_event_loop_object = NULL;
