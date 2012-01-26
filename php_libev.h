@@ -65,15 +65,6 @@ extern zend_module_entry libev_module_entry;
 #  define NO_RETAIN 0
 #endif
 
-#define CHECK_CALLABLE(/* zval */ zcallback, /* char * */ tmp) \
-	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
-	{                                                          \
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,            \
-			"'%s' is not a valid callback", tmp);              \
-		efree(tmp);                                            \
-		RETURN_FALSE;                                          \
-	}                                                          \
-	efree(tmp)
 struct _event_loop_object;
 
 typedef struct event_object {
@@ -110,6 +101,26 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	
 	return 0;
 }
+
+/* TODO: Is it appropriate to throw an exception here? if we do not, incomplete Event
+         objects are created when parameter parsing fails */
+#define PARSE_PARAMETERS(class, param_str, ...) \
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, param_str, __VA_ARGS__) != SUCCESS) { \
+		/* TODO: libev exception */                                                           \
+		zend_throw_exception(NULL, "Error parsing parameters to libev\\" #class               \
+			"::__construct()", 0 TSRMLS_DC);                                                  \
+		return;                                                                               \
+	}
+
+#define CHECK_CALLABLE(/* zval */ zcallback, /* char * */ tmp) \
+	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
+	{                                                          \
+		zend_throw_exception_ex(NULL, 0 TSRMLS_CC,             \
+			"'%s' is not a valid callback", tmp);              \
+		efree(tmp);                                            \
+		RETURN_FALSE;                                          \
+	}                                                          \
+	efree(tmp)
 
 /* Used to initialize the object storage pointer in __construct
    EVENT_OBJECT_PREPARE(event_object *, zval *) */

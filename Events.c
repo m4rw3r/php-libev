@@ -146,9 +146,7 @@ PHP_METHOD(IOEvent, __construct)
 	php_stream *stream;
 	php_socket *php_sock;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lZz", &events, &fd, &zcallback) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(IOEvent, "lZz", &events, &fd, &zcallback);
 	
 	/* Check if we have the correct flags */
 	if( ! (events & (EV_READ | EV_WRITE)))
@@ -209,9 +207,7 @@ PHP_METHOD(TimerEvent, __construct)
 	char *func_name;
 	event_object *obj;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(TimerEvent, "zd|d", &callback, &after, &repeat);
 	
 	CHECK_CALLABLE(callback, func_name);
 	
@@ -379,9 +375,7 @@ PHP_METHOD(PeriodicEvent, __construct)
 	char *func_name;
 	event_object *obj;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zd|d", &callback, &after, &repeat) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(PeriodicEvent, "zd|d", &callback, &after, &repeat);
 	
 	CHECK_CALLABLE(callback, func_name);
 	
@@ -487,9 +481,7 @@ PHP_METHOD(SignalEvent, __construct)
 	char *func_name;
 	event_object *obj;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lz", &signo, &callback) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(SignalEvent, "lz", &signo, &callback);
 	
 	CHECK_CALLABLE(callback, func_name);
 	
@@ -517,9 +509,7 @@ PHP_METHOD(ChildEvent, __construct)
 	char *func_name;
 	event_object *obj;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zl|b", &callback, &pid, &trace) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(ChildEvent, "zl|b", &callback, &pid, &trace);
 	
 	CHECK_CALLABLE(callback, func_name);
 	
@@ -638,9 +628,7 @@ PHP_METHOD(StatEvent, __construct)
 	char *func_name;
 	event_object *obj;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sz|d", &filename, &filename_len, &callback, &interval) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(StatEvent, "sz|d", &filename, &filename_len, &callback, &interval);
 	
 	assert(strlen(filename) == filename_len);
 	
@@ -786,9 +774,7 @@ PHP_METHOD(IdleEvent, __construct)
 	event_object *obj;
 	char *func_name;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
-		return;
-	}
+	PARSE_PARAMETERS(IdleEvent, "z", &callback);
 	
 	CHECK_CALLABLE(callback, func_name);
 	
