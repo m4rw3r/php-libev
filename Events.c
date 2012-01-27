@@ -116,6 +116,10 @@ PHP_METHOD(Event, invoke)
 	int revents = 0;
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|l", &revents) != SUCCESS) {
+		return;
+	}
+	
 	/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
 	/* Can't use event_invoke here as it requires an event_loop_object */
 	ev_invoke(loop, obj->watcher, revents);
