@@ -280,6 +280,7 @@ static const function_entry event_methods[] = {
 	ZEND_ME(Event, setCallback, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, invoke, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(Event, stop, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(Event, clearPending, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -304,6 +305,7 @@ static const function_entry periodic_event_methods[] = {
 	ZEND_ME(PeriodicEvent, getOffset, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, setInterval, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(PeriodicEvent, again, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
@@ -361,7 +363,6 @@ static const function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, getPendingCount, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, add, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, remove, NULL, ZEND_ACC_PUBLIC)
-	ZEND_ME(EventLoop, clearPending, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, feedEvent, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(EventLoop, getEvents, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
@@ -370,6 +371,8 @@ static const function_entry event_loop_methods[] = {
 static void *libevrealloc(void *ptr, size_t size)
 {
 	/* php_printf("realloc(0x%lx, %ld)\n", (size_t) ptr, size); */
+	/* PHP's erealloc(ptr, size) does not implement the common realloc() behaviour,
+	   does not free if size == 0, nor does it ignore the call if ptr == 0 && size == 0 */ 
 	if(size) { return erealloc(ptr, size); } else if(ptr) { efree(ptr); } return 0;
 }
 

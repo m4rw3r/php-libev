@@ -68,6 +68,37 @@ PHP_METHOD(Event, setCallback)
 	obj->callback = zcallback;
 }
 
+/**
+ * If the Event is pending, this function clears its pending status and
+ * returns its revents bitset (as if its callback was invoked). If the watcher
+ * isn't pending it returns 0.
+ * 
+ * @param  Event
+ * @return int  revents bitset if pending, 0 if not (or not associated with EventLoop)
+ */
+PHP_METHOD(Event, clearPending)
+{
+	int revents = 0;
+	event_object *event = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(event->loop_obj)
+	{
+		revents = event_clear_pending(event->loop_obj, event);
+		
+		/* Inactive event, meaning it is no longer part of the event loop
+		   and must be dtor:ed (most probably a fed event which has never
+		   become active because ev_TYPE_start has not been called) */
+		if( ! event_is_active(event))
+		{
+			EVENT_LOOP_REF_DEL(event);
+		}
+		
+		RETURN_LONG(revents);
+	}
+	
+	RETURN_LONG(0);
+}
+
 /* TODO: Add Event::getCallback() ? */
 /* TODO: Add Event::getPriority() and Event::setPriority() */
 
@@ -392,15 +423,30 @@ PHP_METHOD(PeriodicEvent, setInterval)
 	}
 	
 	((ev_periodic *)obj->watcher)->interval = interval;
-	
-	{
-		
-	}
-	
-	RETURN_BOOL(0);
 }
 
-/* TODO: Implement ev_periodic_again(loop, ev_periodic *) ? */
+PHP_METHOD(PeriodicEvent, again)
+{
+	/* TODO: Optional EventLoop parameter? */
+	event_object *event_obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(event_has_loop(event_obj))
+	{
+		event_periodic_again(event_obj);
+		
+		if( ! event_is_active(event_obj) && ! event_is_pending(event_obj))
+		{
+			/* No longer referenced by libev, so remove GC protection */
+			IF_DEBUG(libev_printf("ev_periodic_again() stopped non-repeating timer\n"));
+			EVENT_LOOP_REF_DEL(event_obj);
+		}
+		
+		RETURN_BOOL(1);
+	}
+	
+	/* TODO: Throw exception */
+	RETURN_BOOL(0);
+}
 
 
 PHP_METHOD(SignalEvent, __construct)

@@ -588,59 +588,6 @@ PHP_METHOD(EventLoop, remove)
 }
 
 /**
- * If the watcher is pending, this function clears its pending status and
- * returns its revents bitset (as if its callback was invoked). If the watcher
- * isn't pending it returns 0, or if it is not associated with this EventLoop
- * it returns false.
- * 
- * @param  Event
- * @return int  revents bitset if pending, 0 if not
- * @return false  If not associated with this EventLoop, or if the EventLoop or
- *                Event is not initialized
- */
-PHP_METHOD(EventLoop, clearPending)
-{
-	zval *event_obj;
-	event_object *event;
-	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
-	int revents = 0;
-	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
-		return;
-	}
-	
-	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
-	
-	assert(loop_obj->loop);
-	assert(event->watcher);
-	
-	if(loop_obj->loop && event->watcher)
-	{
-		/* Check that the event is associated with us */
-		if( ! EVENT_IS_IN_LOOP(event, loop_obj))
-		{
-			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
-			
-			RETURN_BOOL(0);
-		}
-		
-		revents = ev_clear_pending(loop_obj->loop, event->watcher);
-		
-		/* Inactive event, meaning it is no longer part of the event loop
-		   and must be dtor:ed (most probably a fed event which has never
-		   become active because ev_TYPE_start has not been called) */
-		if( ! ev_is_active(event->watcher))
-		{
-			LOOP_REF_DEL(event);
-		}
-		
-		RETURN_LONG(revents);
-	}
-	
-	RETURN_BOOL(0);
-}
-
-/**
  * Feeds the given event set into the event loop, as if the specified event
  * had happened for the specified watcher.
  * 
