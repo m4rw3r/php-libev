@@ -607,11 +607,12 @@ PHP_METHOD(EventLoop, remove)
  */
 PHP_METHOD(EventLoop, feedEvent)
 {
+	int revents = 0;
 	zval *event_obj;
 	event_object *event;
 	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O", &event_obj, event_ce) != SUCCESS) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O|l", &event_obj, event_ce, &revents) != SUCCESS) {
 		return;
 	}
 	
@@ -633,7 +634,7 @@ PHP_METHOD(EventLoop, feedEvent)
 			EVENT_LOOP_REF_ADD(event, loop_obj);
 		}
 		
-		event_feed_event(loop_obj, event, 0);
+		event_feed_event(loop_obj, event, revents);
 		
 		IF_DEBUG(php_printf(" done\n"));
 		
