@@ -17,14 +17,7 @@ PHP_METHOD(Event, isActive)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_BOOL(EVENT_IS_ACTIVE(obj));
-	}
-	
-	RETURN_NULL();
+	RETURN_BOOL(event_is_active(obj));
 }
 
 /**
@@ -41,14 +34,7 @@ PHP_METHOD(Event, isPending)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_BOOL(ev_is_pending(obj->watcher));
-	}
-	
-	RETURN_NULL();
+	RETURN_BOOL(event_is_pending(obj));
 }
 
 /**
@@ -99,17 +85,9 @@ PHP_METHOD(Event, invoke)
 	int revents = 0;
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
-		ev_invoke(loop, obj->watcher, revents);
-		
-		RETURN_BOOL(1);
-	}
-	
-	RETURN_BOOL(0);
+	/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
+	/* Can't use event_invoke here as it requires an event_loop_object */
+	ev_invoke(loop, obj->watcher, revents);
 }
 
 /**
@@ -122,9 +100,9 @@ PHP_METHOD(Event, stop)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
+	EVENT_STOP(obj);
 	
-	RETURN_BOOL(php_event_stop(obj, 0));
+	EVENT_LOOP_REF_DEL(obj);
 }
 
 
@@ -187,7 +165,7 @@ PHP_METHOD(IOEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, zcallback);
 	
-	EVENT_CREATE_WATCHER(obj, io, (int) file_desc, (int) events);
+	event_io_init(obj, (int) file_desc, (int) events);
 }
 
 
@@ -213,7 +191,7 @@ PHP_METHOD(TimerEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER(obj, timer, after, repeat);
+	event_timer_init(obj, after, repeat);
 }
 
 /**
@@ -226,14 +204,7 @@ PHP_METHOD(TimerEvent, getRepeat)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(((ev_timer *)obj->watcher)->repeat);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(((ev_timer *)obj->watcher)->repeat);
 }
 
 /**
@@ -252,16 +223,7 @@ PHP_METHOD(TimerEvent, setRepeat)
 		return;
 	}
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		((ev_timer *)obj->watcher)->repeat = repeat;
-		
-		RETURN_BOOL(1);
-	}
-	
-	RETURN_BOOL(0);
+	((ev_timer *)obj->watcher)->repeat = repeat;
 }
 
 /**
@@ -276,14 +238,7 @@ PHP_METHOD(TimerEvent, getAfter)
 	
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(((ev_timer *)obj->watcher)->at);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(((ev_timer *)obj->watcher)->at);
 }
 
 /**
@@ -303,24 +258,24 @@ PHP_METHOD(TimerEvent, getAfter)
  */
 PHP_METHOD(TimerEvent, again)
 {
+	/* TODO: Optional EventLoop parameter? */
 	event_object *event_obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(event_obj->watcher);
-	
-	if(event_obj->watcher && EVENT_HAS_LOOP(event_obj))
+	if(event_has_loop(event_obj))
 	{
-		ev_timer_again(event_obj->evloop->loop, (ev_timer *)event_obj->watcher);
+		event_timer_again(event_obj);
 		
-		if( ! EVENT_IS_ACTIVE(event_obj) && ! EVENT_IS_PENDING(event_obj))
+		if( ! event_is_active(event_obj) && ! event_is_pending(event_obj))
 		{
 			/* No longer referenced by libev, so remove GC protection */
 			IF_DEBUG(libev_printf("ev_timer_again() stopped non-repeating timer\n"));
-			LOOP_REF_DEL(event_obj);
+			EVENT_LOOP_REF_DEL(event_obj);
 		}
 		
 		RETURN_BOOL(1);
 	}
 	
+	/* TODO: Throw exception */
 	RETURN_BOOL(0);
 }
 
@@ -335,11 +290,9 @@ PHP_METHOD(TimerEvent, getRemaining)
 {
 	event_object *event_obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(event_obj->watcher);
-	
-	if(event_obj->watcher && EVENT_HAS_LOOP(event_obj))
+	if(event_has_loop(event_obj))
 	{
-		RETURN_DOUBLE(ev_timer_remaining(event_obj->evloop->loop, (ev_timer *)event_obj->watcher));
+		RETURN_DOUBLE(event_timer_remaining(event_obj));
 	}
 	
 	RETURN_BOOL(0);
@@ -381,7 +334,7 @@ PHP_METHOD(PeriodicEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER(obj, periodic, after, repeat, 0);
+	event_periodic_init(obj, after, repeat, 0);
 }
 
 /**
@@ -394,14 +347,7 @@ PHP_METHOD(PeriodicEvent, getTime)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(ev_periodic_at((ev_periodic *)obj->watcher));
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(event_periodic_at(obj));
 }
 
 /**
@@ -415,14 +361,7 @@ PHP_METHOD(PeriodicEvent, getOffset)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(((ev_periodic *)obj->watcher)->offset);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(((ev_periodic *)obj->watcher)->offset);
 }
 
 /**
@@ -435,14 +374,7 @@ PHP_METHOD(PeriodicEvent, getInterval)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(((ev_periodic *)obj->watcher)->interval);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(((ev_periodic *)obj->watcher)->interval);
 }
 
 /**
@@ -459,13 +391,10 @@ PHP_METHOD(PeriodicEvent, setInterval)
 		return;
 	}
 	
-	assert(obj->watcher);
+	((ev_periodic *)obj->watcher)->interval = interval;
 	
-	if(obj->watcher)
 	{
-		((ev_periodic *)obj->watcher)->interval = interval;
 		
-		RETURN_BOOL(1)
 	}
 	
 	RETURN_BOOL(0);
@@ -487,7 +416,7 @@ PHP_METHOD(SignalEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER(obj, signal, (int) signo);
+	event_signal_init(obj, (int) signo);
 }
 
 
@@ -515,7 +444,7 @@ PHP_METHOD(ChildEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER(obj, child, (int) pid, (int) trace);
+	event_child_init(obj, (int) pid, (int) trace);
 }
 
 /**
@@ -528,14 +457,7 @@ PHP_METHOD(ChildEvent, getPid)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_LONG(((ev_child *)obj->watcher)->pid);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_LONG(((ev_child *)obj->watcher)->pid);
 }
 
 /**
@@ -548,14 +470,7 @@ PHP_METHOD(ChildEvent, getRPid)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_LONG(((ev_child *)obj->watcher)->rpid);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_LONG(((ev_child *)obj->watcher)->rpid);
 }
 
 /**
@@ -569,14 +484,7 @@ PHP_METHOD(ChildEvent, getRStatus)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_LONG(((ev_child *)obj->watcher)->rstatus);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_LONG(((ev_child *)obj->watcher)->rstatus);
 }
 
 
@@ -633,6 +541,7 @@ PHP_METHOD(StatEvent, __construct)
 	assert(strlen(filename) == filename_len);
 	
 	/* TODO: Do we need to respect safe_mode and open_basedir here? */
+	/* TODO: Check for empty string? */
 	
 	CHECK_CALLABLE(callback, func_name);
 	
@@ -642,7 +551,7 @@ PHP_METHOD(StatEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER(obj, stat, stat_path, interval);
+	event_stat_init(obj, stat_path, interval);
 }
 
 /**
@@ -655,14 +564,7 @@ PHP_METHOD(StatEvent, getPath)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_STRING(((ev_stat *)obj->watcher)->path, 1);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_STRING(((ev_stat *)obj->watcher)->path, 1);
 }
 
 /**
@@ -675,14 +577,7 @@ PHP_METHOD(StatEvent, getInterval)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		RETURN_DOUBLE(((ev_stat *)obj->watcher)->interval);
-	}
-	
-	RETURN_BOOL(0);
+	RETURN_DOUBLE(((ev_stat *)obj->watcher)->interval);
 }
 
 /* The two macros below are more or less copies from php_if_fstat */
@@ -731,16 +626,7 @@ PHP_METHOD(StatEvent, getAttr)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		ev_statdata_to_php_array(((ev_stat *)obj->watcher)->attr, return_value);
-		
-		return;
-	}
-	
-	RETURN_BOOL(0);
+	ev_statdata_to_php_array(((ev_stat *)obj->watcher)->attr, return_value);
 }
 
 /**
@@ -756,16 +642,7 @@ PHP_METHOD(StatEvent, getPrev)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher)
-	{
-		ev_statdata_to_php_array(((ev_stat *)obj->watcher)->prev, return_value);
-		
-		return;
-	}
-	
-	RETURN_BOOL(0);
+	ev_statdata_to_php_array(((ev_stat *)obj->watcher)->prev, return_value);
 }
 
 PHP_METHOD(IdleEvent, __construct)
@@ -780,7 +657,7 @@ PHP_METHOD(IdleEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER2(obj, idle);
+	event_idle_init(obj);
 }
 
 
@@ -798,18 +675,16 @@ PHP_METHOD(AsyncEvent, __construct)
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
-	EVENT_CREATE_WATCHER2(obj, async);
+	event_async_init(obj);
 }
 
 PHP_METHOD(AsyncEvent, send)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
-	assert(obj->watcher);
-	
-	if(obj->watcher && EVENT_HAS_LOOP(obj))
+	if(event_has_loop(obj))
 	{
-		ev_async_send(obj->evloop->loop, (ev_async*)obj->watcher);
+		ev_async_send(obj->loop_obj->loop, (ev_async*)obj->watcher);
 		
 		RETURN_BOOL(1);
 	}

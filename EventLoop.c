@@ -406,6 +406,8 @@ PHP_METHOD(EventLoop, setIOCollectInterval)
 		return;
 	}
 	
+	/* TODO: Check so it is >= 0 */
+	
 	assert(obj->loop);
 	
 	if(obj->loop)
@@ -433,6 +435,8 @@ PHP_METHOD(EventLoop, setTimeoutCollectInterval)
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &interval) != SUCCESS) {
 		return;
 	}
+	
+	/* TODO: Check so it is >= 0 */
 	
 	assert(obj->loop);
 	
@@ -478,8 +482,6 @@ PHP_METHOD(EventLoop, getPendingCount)
  */
 PHP_METHOD(EventLoop, add)
 {
-	/* TODO: Implement support for ev_unref() which will make the EvenLoop ignore
-	   the Event if it is the only active event */
 	zval *zevent;
 	event_object *event;
 	event_loop_object *loop_obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
@@ -491,15 +493,14 @@ PHP_METHOD(EventLoop, add)
 	event = (event_object *)zend_object_store_get_object(zevent TSRMLS_CC);
 	
 	assert(loop_obj->loop);
-	assert(event->watcher);
 	
 	/* Check so the event is not associated with any EventLoop, also needs to check
 	   for active, no need to perform logic if it already is started */
-	if(loop_obj->loop && event->watcher && ! EVENT_IS_ACTIVE(event))
+	if(loop_obj->loop && ! event_is_active(event))
 	{
-		if(EVENT_HAS_LOOP(event))
+		if(event_has_loop(event))
 		{
-			if( ! EVENT_IS_IN_LOOP(event, loop_obj))
+			if( ! event_in_loop(loop_obj, event))
 			{
 				/* Attempting to add a fed event to this EventLoop which
 				   has been fed to another loop */
@@ -508,10 +509,10 @@ PHP_METHOD(EventLoop, add)
 			}
 		}
 		
-		EV_WATCHER_ACTION(event, loop_obj, start, io)
-		else EV_WATCHER_ACTION(event, loop_obj, start, timer)
-		else EV_WATCHER_ACTION(event, loop_obj, start, periodic)
-		else EV_WATCHER_ACTION(event, loop_obj, start, signal)
+		EVENT_WATCHER_ACTION(event, loop_obj, start, io)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, timer)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, periodic)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, signal)
 		else if(instance_of_class(event->std.ce, child_event_ce))
 		{
 			/* Special logic, ev_child can only be attached to the default loop */
@@ -526,14 +527,14 @@ PHP_METHOD(EventLoop, add)
 			ev_child_start(loop_obj->loop, (ev_child *)event->watcher);
 			IF_DEBUG(libev_printf("Calling ev_child_start\n"));
 		}
-		else EV_WATCHER_ACTION(event, loop_obj, start, stat)
-		else EV_WATCHER_ACTION(event, loop_obj, start, idle)
-		else EV_WATCHER_ACTION(event, loop_obj, start, async)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, stat)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, idle)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, async)
 		
-		if( ! EVENT_HAS_LOOP(event))
+		if( ! event_has_loop(event))
 		{
 			/* GC protection */
-			LOOP_REF_ADD(event, loop_obj);
+			EVENT_LOOP_REF_ADD(event, loop_obj);
 		}
 		
 		RETURN_BOOL(1);
@@ -562,31 +563,23 @@ PHP_METHOD(EventLoop, remove)
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
 	assert(loop_obj->loop);
-	assert(event->watcher);
 	
-	if(loop_obj->loop && event->watcher && ev_is_active(event->watcher))
+	if(loop_obj->loop && event_is_active(event))
 	{
-		assert(event->evloop);
+		assert(event->loop_obj);
 		
 		/* Check that the event is associated with us */
-		if( ! EVENT_IS_IN_LOOP(event, loop_obj))
+		if( ! event_in_loop(loop_obj, event))
 		{
 			IF_DEBUG(libev_printf("Event is not in this EventLoop\n"));
 			
 			RETURN_BOOL(0);
 		}
 		
-		EV_WATCHER_ACTION(event, loop_obj, stop, io)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, timer)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, periodic)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, signal)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, child)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, stat)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, idle)
-		else EV_WATCHER_ACTION(event, loop_obj, stop, async)
+		EVENT_STOP(event);
 		
 		/* Remove GC protection, no longer active or pending */
-		LOOP_REF_DEL(event);
+		EVENT_LOOP_REF_DEL(event);
 		
 		RETURN_BOOL(1);
 	}
@@ -678,11 +671,10 @@ PHP_METHOD(EventLoop, feedEvent)
 	event = (event_object *)zend_object_store_get_object(event_obj TSRMLS_CC);
 	
 	assert(loop_obj->loop);
-	assert(event->watcher);
 	
 	/* Only allow Events which are associated with this EventLoop
 	   or those which are not associated with any EventLoop yet */
-	if(loop_obj->loop && event->watcher &&
+	if(loop_obj->loop &&
 		( ! EVENT_HAS_LOOP(event) || EVENT_IS_IN_LOOP(event, loop_obj)))
 	{
 		IF_DEBUG(libev_printf("Feeding event with pending %d and active %d...",
@@ -691,10 +683,10 @@ PHP_METHOD(EventLoop, feedEvent)
 		/* The event might already have a loop, no need to increase refcount */
 		if( ! EVENT_HAS_LOOP(event))
 		{
-			LOOP_REF_ADD(event, loop_obj);
+			EVENT_LOOP_REF_ADD(event, loop_obj);
 		}
 		
-		ev_feed_event(loop_obj->loop, event->watcher, 0);
+		event_feed_event(loop_obj, event, 0);
 		
 		IF_DEBUG(php_printf(" done\n"));
 		

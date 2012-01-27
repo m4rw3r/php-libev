@@ -131,121 +131,176 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	/* Do not increase refcount for $this here, as otherwise we have a cycle */           \
 	event_object_ptr->this     = getThis();                                               \
 	IF_DEBUG(libev_printf("Allocated event 0x%lx\n", (size_t) event_object_ptr->this));   \
-	event_object_ptr->evloop   = NULL
-	
-/* Allocates and initializes the watcher of the specified type (io, time, ...)
-   and passes __VA_ARGS__ after the callback parameter of ev_TYPE_init
-   EVENT_CREATE_WATCHER(event_object *, TYPE, ...) */
-#define EVENT_CREATE_WATCHER(event_object, type, ...)    \
-	assert( ! event_object->watcher);                    \
-	event_object->watcher = emalloc(sizeof(ev_##type));  \
-	memset(event_object->watcher, 0, sizeof(ev_##type)); \
-	event_object->watcher->data = event_object;          \
-	ev_##type##_init((ev_##type *)event_object->watcher, event_callback, __VA_ARGS__)
-#define EVENT_CREATE_WATCHER2(event_object, type)         \
-	assert( ! event_object->watcher);                    \
-	event_object->watcher = emalloc(sizeof(ev_##type));  \
-	memset(event_object->watcher, 0, sizeof(ev_##type)); \
-	event_object->watcher->data = event_object;          \
-	ev_##type##_init((ev_##type *)event_object->watcher, event_callback)
+	event_object_ptr->loop_obj   = NULL
 
-/* "Returns" true if the event watcher is active */
-#define EVENT_IS_ACTIVE(event_object)   ev_is_active(event_object->watcher)
-/* "Returns" true if the event watcher is pending */
-#define EVENT_IS_PENDING(event_object)  ev_is_pending(event_object->watcher)
+#define event_io_init(event,fd,events) \
+	do{ assert(event->watcher); ev_io_init((ev_io *)event->watcher, event_callback, fd, events); } while(0)
+#define event_timer_init(event,after,repeat) \
+	do{ assert(event->watcher); ev_timer_init((ev_timer *)event->watcher, event_callback, after, repeat); } while(0)
+#define event_periodic_init(event, ofs, ival, rcb) \
+	do{ assert(event->watcher); ev_periodic_init((ev_periodic *)event->watcher, event_callback, ofs, ival, rcb); } while(0)
+#define event_signal_init(event, signum) \
+	do{ assert(event->watcher); ev_signal_init((ev_signal *)event->watcher, event_callback, signum); } while(0)
+#define event_child_init(event, pid, trace) \
+	do{ assert(event->watcher); ev_child_init((ev_child *)event->watcher, event_callback, pid, trace); } while(0)
+#define event_stat_init(event, path, interval) \
+	do{ assert(event->watcher); ev_stat_init((ev_stat *)event->watcher, event_callback, path, interval); } while(0)
+#define event_idle_init(event) \
+	do{ assert(event->watcher); ev_idle_init((ev_idle *)event->watcher, event_callback); } while(0)
+#define event_prepare_init(event) \
+	do{ assert(event->watcher); ev_prepare_init((ev_prepare *)event->watcher, event_callback); } while(0)
+#define event_check_init(event) \
+	do{ assert(event->watcher); ev_check_init((ev_check *)event->watcher, event_callback); } while(0)
+#define event_embed_init(event, other) \
+	do{ assert(event->watcher); ev_embed_init((ev_embed *)event->watcher, event_callback); } while(0)
+#define event_fork_init(event) \
+	do{ assert(event->watcher); ev_fork_init((ev_fork *)event->watcher, event_callback); } while(0)
+#define event_cleanup_init(event) \
+	do{ assert(event->watcher); ev_cleanup_init((ev_cleanup *)event->watcher, event_callback); } while(0)
+#define event_async_init(event) \
+	do{ assert(event->watcher); ev_async_init((ev_async *)event, event_callback); }while(0)
+
+#define event_is_pending(event_object)  ev_is_pending(event_object->watcher)
+#define event_is_active(event_object) ev_is_active(event_object->watcher)
+
+#define event_priority(event)  ev_priority(event->watcher)
+#define event_set_priority(event, pri)  ev_set_priority(event->watcher, pri)
+
+#define event_periodic_at(event)  ev_periodic_at((ev_periodic *)event->watcher)
+
+#define event_feed_event(loop_obj, event, revents) \
+	ev_feed_event(loop_obj->loop, event->watcher, revents)
+#define event_feed_fd_event(loop_obj, fd, revents) \
+	ev_feed_fd_event(loop_obj->loop, fd, revents)
+#define event_feed_signal_event(loop_obj, signum) \
+	ev_feed_signal_event(loop_obj->loop, signum)
+#define event_invoke(loop_obj, event, revents) \
+	ev_invoke(loop_obj->loop, event->watcher, signum)
+#define event_clear_pending(loop_obj, event) \
+	ev_clear_pending(loop_obj->loop, event->watcher)
+#define event_timer_again(event) \
+	if(event->loop_obj) { ev_timer_again(event->loop_obj->loop, (ev_timer*)event->watcher); }
+#define event_timer_remaining(event) \
+	ev_timer_remaining(event->loop_obj->loop, (ev_timer *)event->watcher)
+#define event_embed_sweep(event) \
+	if(event->loop_obj) { ev_embed_sweep(event->loop_obj->loop, (ev_embed *) event->watcher); }
+#define event_async_send(event) \
+	if(event->loop_obj) { ev_async_send(event->loop_obj->loop, (ev_async *) event->watcher); }
+
 /* "Returns" true if the event is associated with a loop */
-#define EVENT_HAS_LOOP(event_object)    (event_object->evloop)
+#define event_has_loop(event_object)    (event_object->loop_obj)
 
-/* Is true if event_object is registered with event_loop_object */
-#define EVENT_IS_IN_LOOP(event_object, event_loop_object) \
-	(event_object->evloop && (event_object->evloop->loop == event_loop_object->loop))
+/* Is true if event_object is registered with ev_loop */
+#define event_in_loop(loop_obj, event_obj) \
+	(event_obj->loop_obj && (event_obj->loop_obj->loop == loop_obj->loop))
+
+
+#if NO_RETAIN == 1
+#  define EVENT_INCREF(event_object)
+#  define EVENT_DTOR(event_object)
+#else
+	#if LIBEV_DEBUG > 1
+#       define EVENT_INCREF(event_object) \
+			do { libev_printf("Increased refcount on Event 0x%lx to %d\n", \
+			(unsigned long)((size_t) event_object->this),         \
+			Z_REFCOUNT_P(event_object->this));   \
+			zval_add_ref(&event_object->this); } while(0)
+#       define EVENT_DTOR(event_object) \
+			do { libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
+			(unsigned long)((size_t) event_object->this),          \
+			Z_REFCOUNT_P(event_object->this) - 1);                 \
+			zval_ptr_dtor(&event_object->this); } while(0)
+#   else
+#       define EVENT_INCREF(event_object) \
+			do { zval_add_ref(&event_object->this); } while(0)
+#       define EVENT_DTOR(event_object) \
+			do { zval_ptr_dtor(&event_object->this); } while(0)
+#   endif
+#endif
 
 /* Protects event_objects from garbage collection by increasing their
    refcount and storing them in the event_loop_object's doubly-linked
-   list, also sets event_object->evloop to event_loop_object */
-#define _loop_ref_add(event_object, event_loop_object)       \
-	assert(event_object->this);                              \
-	assert( ! event_object->evloop);                         \
-	assert( ! event_object->next);                           \
-	assert( ! event_object->prev);                           \
-	zval_add_ref(&event_object->this);                       \
-	event_object->evloop = event_loop_object;                \
-	if( ! event_loop_object->events) {                       \
-		event_object->next = NULL;                           \
-		event_object->prev = NULL;                           \
-		event_loop_object->events = event_object;            \
-	}                                                        \
-	else                                                     \
-	{                                                        \
-		event_object->next = event_loop_object->events;      \
-		event_object->prev = NULL;                           \
-		event_loop_object->events->prev = event_object;      \
-		event_loop_object->events = event_object;            \
+   list, also sets event_object->loop_obj to event_loop_object */
+#define EVENT_LOOP_REF_ADD(event_object, event_loop_object)  \
+	if( ! event_has_loop(event_object)) {                    \
+		assert(event_object->this);                          \
+		assert( ! event_object->next);                       \
+		assert( ! event_object->prev);                       \
+		EVENT_INCREF(event_object);                          \
+		event_object->loop_obj = event_loop_object;          \
+		if( ! event_loop_object->events) {                   \
+			event_object->next = NULL;                       \
+			event_object->prev = NULL;                       \
+			event_loop_object->events = event_object;        \
+		}                                                    \
+		else                                                 \
+		{                                                    \
+			event_object->next = event_loop_object->events;  \
+			event_object->prev = NULL;                       \
+			event_loop_object->events->prev = event_object;  \
+			event_loop_object->events = event_object;        \
+		}                                                    \
 	}
 
 /* Removes garbage collection protection by removing the event from the
-   doubly linked list, nulling the event_object->evloop and finally calling
+   doubly linked list, nulling the event_object->loop_obj and finally calling
    zval_ptr_dtor */
-#define _loop_ref_del(event_object)                                      \
-	assert(event_object->evloop);                                        \
-	assert(event_object->watcher);                                       \
-	assert( ! EVENT_IS_ACTIVE(event_object));                            \
-	assert( ! EVENT_IS_PENDING(event_object));                           \
-	if(event_object->next)                                               \
-	{                                                                    \
-		if(event_object->prev)                                           \
+#define EVENT_LOOP_REF_DEL(event_object)                                 \
+	if(event_object->loop_obj) {                                         \
+		assert( ! event_is_active(event_object));                        \
+		assert( ! event_is_pending(event_object));                       \
+		if(event_object->next)                                           \
 		{                                                                \
-			/* Middle of the doubly-linked list */                       \
-			event_object->prev->next = event_object->next;               \
-			event_object->next->prev = event_object->prev;               \
+			if(event_object->prev)                                       \
+			{                                                            \
+				/* Middle of the doubly-linked list */                   \
+				event_object->prev->next = event_object->next;           \
+				event_object->next->prev = event_object->prev;           \
+			}                                                            \
+			else                                                         \
+			{                                                            \
+				/* First of the doubly-linked list */                    \
+				assert(event_object->loop_obj->events);                  \
+				event_object->loop_obj->events = event_object->next;     \
+				event_object->next->prev = NULL;                         \
+			}                                                            \
+		}                                                                \
+		else if(event_object->prev)                                      \
+		{                                                                \
+			/* Last of the doubly-linked list */                         \
+			assert(event_object->prev->next);                            \
+			event_object->prev->next = NULL;                             \
 		}                                                                \
 		else                                                             \
 		{                                                                \
-			/* First of the doubly-linked list */                        \
-			assert(event_object->evloop->events);                        \
-			event_object->evloop->events = event_object->next;           \
-			event_object->next->prev = NULL;                             \
+			/* Only elment of the doubly-linked list */                  \
+			assert(event_object->loop_obj->events);                      \
+			event_object->loop_obj->events = NULL;                       \
 		}                                                                \
-	}                                                                    \
-	else if(event_object->prev)                                          \
-	{                                                                    \
-		/* Last of the doubly-linked list */                             \
-		assert(event_object->prev->next);                                \
-		event_object->prev->next = NULL;                                 \
-	}                                                                    \
-	else                                                                 \
-	{                                                                    \
-		/* Only elment of the doubly-linked list */                      \
-		assert(event_object->evloop->events);                            \
-		event_object->evloop->events = NULL;                             \
-	}                                                                    \
-	event_object->next   = NULL;                                         \
-	event_object->prev   = NULL;                                         \
-	event_object->evloop = NULL;                                         \
-	zval_ptr_dtor(&event_object->this)
+		event_object->next     = NULL;                                   \
+		event_object->prev     = NULL;                                   \
+		event_object->loop_obj = NULL;                                   \
+		EVENT_DTOR(event_object);                                        \
+	}
 
-#if LIBEV_DEBUG > 1
-#  define LOOP_REF_ADD(event_object, event_loop_object)       \
-	_loop_ref_add(event_object, event_loop_object);           \
-	libev_printf("Increased refcount on Event 0x%lx to %d\n", \
-		(unsigned long)((size_t) event_object->this),         \
-		Z_REFCOUNT_P(event_object->this));
 
-#  define LOOP_REF_DEL(event_object)                           \
-	libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
-		(unsigned long)((size_t) event_object->this),          \
-		Z_REFCOUNT_P(event_object->this) - 1);                 \
-	_loop_ref_del(event_object);
-#else
-#  define LOOP_REF_ADD(event_object, event_loop_object) _loop_ref_add(event_object, event_loop_object)
-#  define LOOP_REF_DEL(event_object) _loop_ref_del(event_object)
-#endif
+#define EVENT_WATCHER_ACTION(event_object, loop_obj, action, type)         \
+	if(instance_of_class(event_object->std.ce, type##_event_ce))           \
+	{                                                                      \
+		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));      \
+		ev_##type##_##action(loop_obj->loop, (ev_##type *)event_object->watcher); \
+	}
 
-#define EV_WATCHER_ACTION(event_object, event_loop, action, type)                   \
-	if(instance_of_class(event_object->std.ce, type##_event_ce))                    \
-	{                                                                               \
-		IF_DEBUG(libev_printf("Calling ev_" #type "_" #action "\n"));               \
-		ev_##type##_##action(event_loop->loop, (ev_##type *)event_object->watcher); \
+#define EVENT_STOP(event)                                              \
+	if(event_has_loop(event) && (event_is_active(event) || event_is_pending(event))) { \
+		EVENT_WATCHER_ACTION(event, event->loop_obj, stop, io)             \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, timer)     \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, periodic)  \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, signal)    \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, child)     \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, stat)      \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, idle)      \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, async)     \
 	}
 
 

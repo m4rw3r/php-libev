@@ -66,44 +66,16 @@ zend_object_handlers event_object_handlers,
 /* The object containing ev_default_loop, managed by EventLoop::getDefaultLoop() */
 zval *default_event_loop_object = NULL;
 
-
-/**
- * Will stop an event if it has an associated event loop and is active or pending,
- * if force is true it will ignore the active or pending check.
- * 
- * @return int
- */
-static int php_event_stop(event_object *obj, int force)
-{
-	if(obj->watcher && EVENT_HAS_LOOP(obj) && (EVENT_IS_ACTIVE(obj) || EVENT_IS_PENDING(obj) || force))
-	{
-		EV_WATCHER_ACTION(obj, obj->evloop, stop, io)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, timer)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, periodic)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, signal)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, child)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, stat)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, idle)
-		else EV_WATCHER_ACTION(obj, obj->evloop, stop, async)
-		
-		LOOP_REF_DEL(obj);
-		
-		return 1;
-	}
-	
-	return 0;
-}
-
-
-#define CREATE_HANDLER(name) zend_object_value name##_create_handler(zend_class_entry *type TSRMLS_DC)\
+#define CREATE_HANDLER(name, objtype, free_cb, handlers_var, code) \
+zend_object_value name##_create(zend_class_entry *type TSRMLS_DC)\
 {                                                                                                \
-	IF_DEBUG(libev_printf("Allocating " #name "_object..."));                                    \
+	IF_DEBUG(libev_printf("Allocating " #objtype "..."));                                        \
 	                                                                                             \
 	zval *tmp;                                                                                   \
 	zend_object_value retval;                                                                    \
 	                                                                                             \
-	name##_object *obj = emalloc(sizeof(name##_object));                                         \
-	memset(obj, 0, sizeof(name##_object));                                                       \
+	objtype *obj = emalloc(sizeof(objtype));                                                     \
+	memset(obj, 0, sizeof(objtype));                                                             \
 	obj->std.ce = type;                                                                          \
 	                                                                                             \
 	ALLOC_HASHTABLE(obj->std.properties);                                                        \
@@ -111,20 +83,32 @@ static int php_event_stop(event_object *obj, int force)
 	zend_hash_copy(obj->std.properties, &type->default_properties,                               \
 	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));                       \
 	                                                                                             \
-	retval.handle = zend_objects_store_put(obj, NULL, name##_free_storage, NULL TSRMLS_CC);      \
-	retval.handlers = &name##_object_handlers;                                                   \
+	retval.handle = zend_objects_store_put(obj, NULL, free_cb, NULL TSRMLS_CC);                  \
+	retval.handlers = &handlers_var;                                                             \
+	                                                                                             \
+	code                                                                                         \
 	                                                                                             \
 	IF_DEBUG(php_printf("done\n"));                                                              \
 	                                                                                             \
 	return retval;                                                                               \
 }
 
-#define FREE_STORAGE(name, code) void name##_free_storage(void *object TSRMLS_DC) \
+
+#define CREATE_EVENT_HANDLER(objtype, free_cb)                        \
+CREATE_HANDLER(objtype, event_object, free_cb, event_object_handlers, \
+{                                                                     \
+	obj->watcher = emalloc(sizeof(objtype));                          \
+	memset(obj->watcher, 0, sizeof(objtype));                         \
+	obj->watcher->event = obj;                                        \
+})
+
+#define FREE_STORAGE(objtype, code) \
+void objtype##_free(void *object TSRMLS_DC) \
 {                                                                                 \
-	IF_DEBUG(libev_printf("Freeing " #name "_object..."));                        \
+	IF_DEBUG(libev_printf("Freeing " #objtype "..."));                            \
 	                                                                              \
 	zval *events;                                                                 \
-	name##_object *obj = (name##_object *) object;                                \
+	objtype *obj = (objtype *) object;                                            \
 	                                                                              \
 	zend_hash_destroy(obj->std.properties);                                       \
 	FREE_HASHTABLE(obj->std.properties);                                          \
@@ -136,59 +120,56 @@ static int php_event_stop(event_object *obj, int force)
 	IF_DEBUG(php_printf("done\n"));                                               \
 }
 
-FREE_STORAGE(event,
+#define FREE_EVENT                                                                  \
+	do {                                                                            \
+		if(obj->loop_obj)                                                           \
+		{                                                                           \
+			IF_DEBUG(php_printf(" WARNING freeing 0x%lx; active: %d, pending: %d,"  \
+				" refcount: %d with evloop link ",                                  \
+				(size_t) obj->this, event_is_active(obj), event_is_pending(obj),    \
+					Z_REFCOUNT_P(obj->this)));                                      \
+			/* TODO: Stacktrace PHP, and see why obj->this is getting freed despite \
+			         being attached to an EventLoop (refcount != 0),                \
+			         so force-remove it from the evloop for now */                  \
+			EVENT_STOP(obj);                                                        \
+			EVENT_LOOP_REF_DEL(obj);                                                \
+		}                                                                           \
+		                                                                            \
+		/* Callback might be undefined if there has been an error in constructor */ \
+		if(obj->callback)                                                           \
+		{                                                                           \
+			zval_ptr_dtor(&obj->callback);                                          \
+		}                                                                           \
+		                                                                            \
+		efree(obj->watcher);                                                        \
+		/* No need to free obj->this, it is already done */                         \
+		IF_DEBUG(php_printf(" freed event 0x%lx ", (size_t) obj->this));            \
+		                                                                            \
+		obj->this = NULL;                                                           \
+	} while(0)
+
+
+FREE_STORAGE(event_object,
 	
-	assert(obj->callback);
-	assert(obj->watcher);
-	
-	if(obj->evloop)
-	{
-		IF_DEBUG(php_printf(" WARNING freeing active: %d, pending: %d, refcount: %d with evloop link ",
-			EVENT_IS_ACTIVE(obj), EVENT_IS_PENDING(obj), Z_REFCOUNT_P(obj->this)));
-		/* TODO: Stacktrace PHP, and see why obj->this is getting freed despite
-		         being attached to an EventLoop (refcount != 0),
-		         so force-remove it from the evloop for now */
-		php_event_stop(obj, 1);
-	}
-	
-	if(obj->callback)
-	{
-		zval_ptr_dtor(&obj->callback);
-	}
-	
-	if(obj->watcher)
-	{
-		efree(obj->watcher);
-	}
-	
-	/* No need to free obj->this, it is already done */
-	IF_DEBUG(php_printf(" freed event 0x%lx ", (size_t) obj->this));
-	obj->this = NULL;
+	FREE_EVENT;
 )
 
-FREE_STORAGE(stat_event,
+typedef event_object stat_event_object;
+
+FREE_STORAGE(stat_event_object,
 	
-	assert(obj->callback);
-	assert(obj->watcher);
-	
-	if(obj->callback)
+	/* ev_stat has a pointer to a PHP allocated string, free it,
+	   constructor might have failed, so check */
+	if(((ev_stat *)obj->watcher)->path)
 	{
-		zval_ptr_dtor(&obj->callback);
-	}
-	
-	if(obj->watcher)
-	{
-		/* ev_stat has a pointer to a PHP allocated string, free it */
 		efree(((ev_stat *)obj->watcher)->path);
-		efree(obj->watcher);
 	}
 	
-	/* No need to free obj->this, it is already done */
-	IF_DEBUG(libev_printf("Freed event 0x%lx\n", (size_t) obj->this));
-	obj->this = NULL;
+	FREE_EVENT;
 )
 
-FREE_STORAGE(event_loop,
+
+FREE_STORAGE(event_loop_object,
 	
 	assert(obj->loop);
 	
@@ -200,33 +181,21 @@ FREE_STORAGE(event_loop,
 		
 		while(ev)
 		{
-			IF_DEBUG(php_printf("Freeing event 0x%lx\n", (size_t) ev->this));
+			IF_DEBUG(libev_printf("Freeing event 0x%lx from loop\n", (size_t) ev->this));
 			assert(ev->this);
-			assert(ev->evloop);
-			IF_DEBUG(libev_printf("Decreasing refcount on Event 0x%lx to %d\n",
-				(unsigned long) (size_t) ev->this,
-				Z_REFCOUNT_P(ev->this) - 1));
+			assert(ev->loop_obj);
 			
-			if(ev->evloop)
-			{
-				EV_WATCHER_ACTION(ev, ev->evloop, stop, io)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, timer)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, periodic)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, signal)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, child)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, stat)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, idle)
-				else EV_WATCHER_ACTION(ev, ev->evloop, stop, async)
-			}
+			EVENT_STOP(ev);
 			
 			tmp = ev->next;
 			
 			/* Reset the struct */
-			ev->next   = NULL;
-			ev->prev   = NULL;
-			ev->evloop = NULL;
+			ev->next     = NULL;
+			ev->prev     = NULL;
+			ev->loop_obj = NULL;
 			
-			/* No need to efree ev, it has been freed by the ev->this destructor */
+			EVENT_DTOR(ev);
+			
 			ev = tmp;
 		}
 	}
@@ -252,9 +221,16 @@ FREE_STORAGE(event_loop,
 	}
 )
 
-CREATE_HANDLER(event)
-CREATE_HANDLER(stat_event)
-CREATE_HANDLER(event_loop)
+CREATE_EVENT_HANDLER(ev_watcher, event_object_free)
+CREATE_EVENT_HANDLER(ev_io, event_object_free)
+CREATE_EVENT_HANDLER(ev_timer, event_object_free)
+CREATE_EVENT_HANDLER(ev_periodic, event_object_free)
+CREATE_EVENT_HANDLER(ev_signal, event_object_free)
+CREATE_EVENT_HANDLER(ev_child, event_object_free)
+CREATE_EVENT_HANDLER(ev_stat, stat_event_object_free)
+CREATE_EVENT_HANDLER(ev_idle, event_object_free)
+CREATE_EVENT_HANDLER(ev_async, event_object_free)
+CREATE_HANDLER(event_loop_object, event_loop_object, event_loop_object_free, event_loop_object_handlers, ;)
 
 /**
  * Generic event callback which will call the associated PHP callback.
@@ -264,28 +240,32 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 	/* Note: loop might be null pointer because of Event::invoke() */
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
-	assert(w->data);
-	
 	zval retval;
-	zval *args[1];
-	event_object *event = (event_object *) w->data;
+	zval *args[2];
+	
+	assert(w->event);
 	
 	/* Pass the Event object to the callback */
-	args[0] = event->this;
+	args[0] = w->event->this;
 	zval_add_ref(&args[0]);
 	
-	assert(event->callback);
+	/* Pass revents too */
+	MAKE_STD_ZVAL(args[1]);
+	ZVAL_LONG(args[1], revents);
 	
-	if(call_user_function(EG(function_table), NULL, event->callback, &retval, 1, args TSRMLS_CC) == SUCCESS)
+	assert(w->event->callback);
+	
+	if(call_user_function(EG(function_table), NULL, w->event->callback, &retval, 2, args TSRMLS_CC) == SUCCESS)
 	{
 		zval_dtor(&retval);
 	}
 	
-	zval_ptr_dtor(&(args[0]));
+	zval_ptr_dtor(&args[0]);
+	zval_ptr_dtor(&args[1]);
 	
-	if(loop && event->evloop && ! ev_is_active(w) && ! ev_is_pending(w) )
+	if(loop && event_has_loop(w->event) && ! ev_is_active(w) && ! ev_is_pending(w) )
 	{
-		LOOP_REF_DEL(event);
+		EVENT_LOOP_REF_DEL(w->event);
 	}
 }
 
@@ -402,22 +382,19 @@ PHP_MINIT_FUNCTION(libev)
 	/* Init generic object handlers for Event objects, prevent clone */
 	memcpy(&event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_object_handlers.clone_obj = NULL;
-	/* Same for StatEvent */
-	memcpy(&stat_event_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-	stat_event_object_handlers.clone_obj = NULL;
 	
 	
 	/* libev\Event abstract */
 	INIT_CLASS_ENTRY(ce, "libev\\Event", event_methods);
 	event_ce = zend_register_internal_class(&ce TSRMLS_CC);
-	event_ce->create_object = event_create_handler;
+	event_ce->create_object = ev_watcher_create;
 	
 	
 	/* libev\IOEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\IOEvent", io_event_methods);
 	io_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	/* Override default object creation */
-	io_event_ce->create_object = event_create_handler;
+	io_event_ce->create_object = ev_io_create;
 	/* Constants */
 	zend_declare_class_constant_long(io_event_ce, "READ", sizeof("READ") - 1, EV_READ TSRMLS_CC);
 	zend_declare_class_constant_long(io_event_ce, "WRITE", sizeof("WRITE") - 1, EV_WRITE TSRMLS_CC);
@@ -426,19 +403,19 @@ PHP_MINIT_FUNCTION(libev)
 	/* libev\TimerEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\TimerEvent", timer_event_methods);
 	timer_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	timer_event_ce->create_object = event_create_handler;
+	timer_event_ce->create_object = ev_timer_create;
 	
 	
 	/* libev\PeriodicEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\PeriodicEvent", periodic_event_methods);
 	periodic_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	periodic_event_ce->create_object = event_create_handler;
+	periodic_event_ce->create_object = ev_periodic_create;
 	
 	
 	/* libev\SignalEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\SignalEvent", signal_event_methods);
 	signal_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	signal_event_ce->create_object = event_create_handler;
+	signal_event_ce->create_object = ev_signal_create;
 	/* Constants */
 #   define signal_constant(name)  zend_declare_class_constant_long(signal_event_ce, #name, sizeof(#name) - 1, (long) name TSRMLS_CC)
 	signal_constant(SIGHUP);
@@ -494,22 +471,22 @@ PHP_MINIT_FUNCTION(libev)
 	/* libev\ChildEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\ChildEvent", child_event_methods);
 	child_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	child_event_ce->create_object = event_create_handler;
+	child_event_ce->create_object = ev_child_create;
 	
 	/* libev\StatEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\StatEvent", stat_event_methods);
 	stat_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	stat_event_ce->create_object = stat_event_create_handler;
+	stat_event_ce->create_object = ev_stat_create;
 	
 	/* libev\IdleEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\IdleEvent", idle_event_methods);
 	idle_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	idle_event_ce->create_object = event_create_handler;
+	idle_event_ce->create_object = ev_idle_create;
 	
 	/* libev\AsyncEvent */
 	INIT_CLASS_ENTRY(ce, "libev\\AsyncEvent", async_event_methods);
 	async_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
-	async_event_ce->create_object = event_create_handler;
+	async_event_ce->create_object = ev_async_create;
 	
 	
 	/* libev\EventLoop */
@@ -517,7 +494,7 @@ PHP_MINIT_FUNCTION(libev)
 	event_loop_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	
 	/* Override default object handlers so we can use custom struct */
-	event_loop_ce->create_object = event_loop_create_handler;
+	event_loop_ce->create_object = event_loop_object_create;
 	memcpy(&event_loop_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	event_loop_object_handlers.clone_obj = NULL;
 	
