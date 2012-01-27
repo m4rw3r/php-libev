@@ -622,13 +622,13 @@ PHP_METHOD(EventLoop, feedEvent)
 	/* Only allow Events which are associated with this EventLoop
 	   or those which are not associated with any EventLoop yet */
 	if(loop_obj->loop &&
-		( ! EVENT_HAS_LOOP(event) || EVENT_IS_IN_LOOP(event, loop_obj)))
+		( ! event_has_loop(event) || event_is_in_loop(event, loop_obj)))
 	{
 		IF_DEBUG(libev_printf("Feeding event with pending %d and active %d...",
-			EVENT_IS_PENDING(event), EVENT_IS_ACTIVE(event)));
+			event_is_pending(event), event_is_active(event)));
 		
 		/* The event might already have a loop, no need to increase refcount */
-		if( ! EVENT_HAS_LOOP(event))
+		if( ! event_has_loop(event))
 		{
 			EVENT_LOOP_REF_ADD(event, loop_obj);
 		}
