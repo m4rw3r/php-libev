@@ -29,6 +29,7 @@
 
 /* Debug-level, 1 = assert, 2 = assert + debug messages */
 #define LIBEV_DEBUG 1
+#define INCLUDE_EIO 0
 
 #include "php_libev.h"
 
@@ -271,6 +272,11 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 
 #include "Events.c"
 #include "EventLoop.c"
+
+#if INCLUDE_EIO
+#  include "EIO.c"
+#endif
+
 
 static const function_entry event_methods[] = {
 	/* Abstract __construct makes the class abstract */
@@ -516,6 +522,11 @@ PHP_MINIT_FUNCTION(libev)
 	backend_constant(PORT);
 	backend_constant(ALL);
 #   undef backend_constant
+	
+#   if INCLUDE_EIO
+		INIT_CLASS_ENTRY(ce, "libev\\EIO", eio_methods);
+		eio_ce = zend_register_internal_class(&ce TSRMLS_CC);
+#   endif
 	
 	return SUCCESS;
 }

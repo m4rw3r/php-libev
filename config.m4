@@ -4,6 +4,7 @@ PHP_ARG_WITH(libev, for libev support,
 if test "$PHP_LIBEV" != "no"; then
   
   m4_include([libev/libev.m4])
+  m4_include([libeio/libeio.m4])
   
   PHP_ADD_INCLUDE(libev)
   
