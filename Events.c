@@ -45,14 +45,13 @@ PHP_METHOD(Event, isPending)
 PHP_METHOD(Event, setCallback)
 {
 	event_object *obj;
-	zval *zcallback = NULL;
-	char *func_name;
+	dCALLBACK;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &zcallback) != SUCCESS) {
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
 		return;
 	}
 	
-	CHECK_CALLABLE(zcallback, func_name);
+	CHECK_CALLBACK;
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
@@ -64,8 +63,8 @@ PHP_METHOD(Event, setCallback)
 		zval_ptr_dtor(&obj->callback);
 	}
 	
-	zval_add_ref(&zcallback);
-	obj->callback = zcallback;
+	zval_add_ref(&callback);
+	obj->callback = callback;
 }
 
 /**
@@ -151,13 +150,10 @@ PHP_METHOD(Event, stop)
  */
 PHP_METHOD(IOEvent, __construct)
 {
+	dFILE_DESC;
+	dCALLBACK;
 	long events;
-	php_socket_t file_desc;
-	zval **fd, *zcallback = NULL;
-	char *func_name;
 	event_object *obj;
-	php_stream *stream;
-	php_socket *php_sock;
 	
 	PARSE_PARAMETERS(IOEvent, "lZz", &events, &fd, &zcallback);
 	
@@ -170,35 +166,11 @@ PHP_METHOD(IOEvent, __construct)
 		return;
 	}
 	
-	/* Attempt to get the file descriptor from the stream */
-	if(ZEND_FETCH_RESOURCE_NO_RETURN(stream, php_stream*, fd, -1, NULL, php_file_le_stream()))
-	{
-		if(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT | PHP_STREAM_CAST_INTERNAL, (void*)&file_desc, 1) != SUCCESS || file_desc < 0)
-		{
-			/* TODO: libev-specific exception class here */
-			zend_throw_exception(NULL, "libev\\IOEvent: invalid stream", 1 TSRMLS_DC);
-		
-			return;
-		}
-	}
-	else
-	{
-		if(ZEND_FETCH_RESOURCE_NO_RETURN(php_sock, php_socket *, fd, -1, NULL, php_sockets_le_socket()))
-		{
-			file_desc = php_sock->bsd_socket;
-		}
-		else
-		{
-			/* TODO: libev-specific exception class here */
-			zend_throw_exception(NULL, "libev\\IOEvent: fd argument must be either valid PHP stream or valid PHP socket resource", 1 TSRMLS_DC);
-		
-			return;
-		}
-	}
+	EXTRACT_FILE_DESC(IOEvent, __construct);
 	
-	CHECK_CALLABLE(zcallback, func_name);
+	CHECK_CALLBACK;
 	
-	EVENT_OBJECT_PREPARE(obj, zcallback);
+	EVENT_OBJECT_PREPARE(obj, callback);
 	
 	event_io_init(obj, (int) file_desc, (int) events);
 }
@@ -216,13 +188,12 @@ PHP_METHOD(TimerEvent, __construct)
 {
 	double after;
 	double repeat = 0.;
-	zval *callback;
-	char *func_name;
 	event_object *obj;
+	dCALLBACK;
 	
 	PARSE_PARAMETERS(TimerEvent, "zd|d", &callback, &after, &repeat);
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
@@ -359,13 +330,12 @@ PHP_METHOD(PeriodicEvent, __construct)
 {
 	double after;
 	double repeat = 0.;
-	zval *callback;
-	char *func_name;
 	event_object *obj;
+	dCALLBACK;
 
 	PARSE_PARAMETERS(PeriodicEvent, "zd|d", &callback, &after, &repeat);
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
@@ -456,13 +426,12 @@ PHP_METHOD(PeriodicEvent, again)
 PHP_METHOD(SignalEvent, __construct)
 {
 	long signo;
-	zval *callback;
-	char *func_name;
 	event_object *obj;
+	dCALLBACK;
 
 	PARSE_PARAMETERS(SignalEvent, "lz", &signo, &callback);
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
@@ -484,13 +453,12 @@ PHP_METHOD(ChildEvent, __construct)
 {
 	long pid;
 	zend_bool trace = 0;
-	zval *callback;
-	char *func_name;
 	event_object *obj;
+	dCALLBACK;
 	
 	PARSE_PARAMETERS(ChildEvent, "zl|b", &callback, &pid, &trace);
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
@@ -582,9 +550,8 @@ PHP_METHOD(StatEvent, __construct)
 	int filename_len;
 	char *stat_path;
 	double interval = 0.;
-	zval *callback;
-	char *func_name;
 	event_object *obj;
+	dCALLBACK;
 	
 	PARSE_PARAMETERS(StatEvent, "sz|d", &filename, &filename_len, &callback, &interval);
 	
@@ -593,7 +560,7 @@ PHP_METHOD(StatEvent, __construct)
 	/* TODO: Do we need to respect safe_mode and open_basedir here? */
 	/* TODO: Check for empty string? */
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	/* This string needs to be freed on object destruction */
 	stat_path = emalloc(filename_len + 1);
@@ -697,13 +664,12 @@ PHP_METHOD(StatEvent, getPrev)
 
 PHP_METHOD(IdleEvent, __construct)
 {
-	zval *callback;
 	event_object *obj;
-	char *func_name;
+	dCALLBACK;
 
 	PARSE_PARAMETERS(IdleEvent, "z", &callback);
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
@@ -713,15 +679,14 @@ PHP_METHOD(IdleEvent, __construct)
 
 PHP_METHOD(AsyncEvent, __construct)
 {
-	zval *callback;
 	event_object *obj;
-	char *func_name;
+	dCALLBACK;
 
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
 		return;
 	}
 	
-	CHECK_CALLABLE(callback, func_name);
+	CHECK_CALLBACK;
 	
 	EVENT_OBJECT_PREPARE(obj, callback);
 	

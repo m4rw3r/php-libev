@@ -102,6 +102,46 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	return 0;
 }
 
+#define dFILE_DESC        \
+	php_socket_t file_desc; \
+	zval **fd;               \
+	php_stream *stream;     \
+	php_socket *php_sock;
+
+#define EXTRACT_FILE_DESC(class, method) \
+	/* Attempt to get the file descriptor from the stream */                              \
+	if(ZEND_FETCH_RESOURCE_NO_RETURN(stream, php_stream*,                                 \
+		fd, -1, NULL, php_file_le_stream()))                                              \
+	{                                                                                     \
+		if(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT |                          \
+			PHP_STREAM_CAST_INTERNAL, (void*)&file_desc, 1) != SUCCESS || file_desc < 0)  \
+		{                                                                                 \
+			/* TODO: libev-specific exception class here */                               \
+			zend_throw_exception(NULL, "libev\\" #class  ":: " #method                    \
+				"(): invalid stream", 1 TSRMLS_DC);                                       \
+		                                                                                  \
+			return;                                                                       \
+		}                                                                                 \
+	}                                                                                     \
+	else                                                                                  \
+	{                                                                                     \
+		if(ZEND_FETCH_RESOURCE_NO_RETURN(php_sock, php_socket *,                          \
+			fd, -1, NULL, php_sockets_le_socket()))                                       \
+		{                                                                                 \
+			file_desc = php_sock->bsd_socket;                                             \
+		}                                                                                 \
+		else                                                                              \
+		{                                                                                 \
+			/* TODO: libev-specific exception class here */                               \
+			zend_throw_exception(NULL,                                                    \
+				"libev\\" #class  ":: " #method "(): fd argument must be either valid "   \
+				"PHP stream or valid PHP socket resource", 1 TSRMLS_DC);                  \
+		                                                                                  \
+			return;                                                                       \
+		}                                                                                 \
+	}
+
+
 /* TODO: Is it appropriate to throw an exception here? if we do not, incomplete Event
          objects are created when parameter parsing fails */
 #define PARSE_PARAMETERS(class, param_str, ...) \
@@ -112,15 +152,19 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		return;                                                                               \
 	}
 
-#define CHECK_CALLABLE(/* zval */ zcallback, /* char * */ tmp) \
-	if( ! zend_is_callable(zcallback, 0, &tmp TSRMLS_CC))      \
-	{                                                          \
-		zend_throw_exception_ex(NULL, 0 TSRMLS_CC,             \
-			"'%s' is not a valid callback", tmp);              \
-		efree(tmp);                                            \
-		RETURN_FALSE;                                          \
-	}                                                          \
-	efree(tmp)
+#define dCALLBACK              \
+	zval *callback = NULL;     \
+	char *callback_tmp = NULL;
+
+#define CHECK_CALLBACK                                            \
+	do { if( ! zend_is_callable(callback, 0, &callback_tmp TSRMLS_CC)) \
+	{                                                             \
+		zend_throw_exception_ex(NULL, 0 TSRMLS_CC,                \
+			"'%s' is not a valid callback", callback_tmp);        \
+		efree(callback_tmp);                                      \
+		RETURN_FALSE;                                             \
+	}                                                             \
+	efree(callback_tmp); } while(0)
 
 /* Used to initialize the object storage pointer in __construct
    EVENT_OBJECT_PREPARE(event_object *, zval *) */

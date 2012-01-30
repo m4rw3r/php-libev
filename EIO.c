@@ -7,48 +7,8 @@
 #include "libeio/eio.h"
 #include "libeio/eio.c"
 
-#define dFILE_DESC        \
-  php_socket_t file_desc; \
-  zval **fd;               \
-  php_stream *stream;     \
-  php_socket *php_sock;
-
-#define EXTRACT_FD(method) \
-	/* Attempt to get the file descriptor from the stream */                              \
-	if(ZEND_FETCH_RESOURCE_NO_RETURN(stream, php_stream*,                                 \
-		fd, -1, NULL, php_file_le_stream()))                                              \
-	{                                                                                     \
-		if(php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT |                          \
-			PHP_STREAM_CAST_INTERNAL, (void*)&file_desc, 1) != SUCCESS || file_desc < 0)  \
-		{                                                                                 \
-			/* TODO: libev-specific exception class here */                               \
-			zend_throw_exception(NULL, "libev\\EIO:: " #method                            \
-				"(): invalid stream", 1 TSRMLS_DC);                                       \
-		                                                                                  \
-			return;                                                                       \
-		}                                                                                 \
-	}                                                                                     \
-	else                                                                                  \
-	{                                                                                     \
-		if(ZEND_FETCH_RESOURCE_NO_RETURN(php_sock, php_socket *,                          \
-			fd, -1, NULL, php_sockets_le_socket()))                                       \
-		{                                                                                 \
-			file_desc = php_sock->bsd_socket;                                             \
-		}                                                                                 \
-		else                                                                              \
-		{                                                                                 \
-			/* TODO: libev-specific exception class here */                               \
-			zend_throw_exception(NULL,                                                    \
-				"libev\\EIO: fd argument must be either valid PHP stream "                \
-				"or valid PHP socket resource", 1 TSRMLS_DC);                             \
-		                                                                                  \
-			return;                                                                       \
-		}                                                                                 \
-	}
-
-
 /*
- * Stores zcallback, fd and increases their refcount.
+ * Stores callback, fd and increases their refcount.
  * buffer will be assigned to the req->buf, and bufferlen
  * to req->buflen. If buflen != 0 then buf will be freed in
  * req_done().
@@ -56,7 +16,7 @@
 #define STORE_REQ(buffer, bufferlen)           \
 	do { /* Save callback and file descriptor, \
 	   freed in eio_func_done() */             \
-	zval_add_ref(&zcallback);                  \
+	zval_add_ref(&callback);                  \
 	zval_add_ref(fd);                          \
 	/* Increase refcount on the loop, to prevent it from exiting while still waiting \
 	   for calls to be finished. Coupled with an ev_unref() in req_done() */ \
@@ -64,7 +24,7 @@
 	                                           \
 	req->buflen   = bufferlen;                 \
 	req->buf      = buffer;                    \
-	req->callback = zcallback;                 \
+	req->callback = callback;                  \
 	req->zfd      = *fd; } while(0)
 
 
@@ -173,20 +133,18 @@ static int req_done(eio_req *req)
 PHP_METHOD(EIO, write)
 {
 	dFILE_DESC;
-	
-	char *func_name;
-	zval *zcallback;
+	dCALLBACK;
 	char *string;
 	int  string_len;
 	eio_req *req;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zsz", &fd, &string, &string_len, &zcallback) != SUCCESS) {
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zsz", &fd, &string, &string_len, &callback) != SUCCESS) {
 		return;
 	}
 	
-	EXTRACT_FD(write);
+	EXTRACT_FILE_DESC(EIO, write);
 	
-	CHECK_CALLABLE(zcallback, func_name);
+	CHECK_CALLBACK;
 	
 	req = eio_write((int) file_desc, string, string_len,
 		/* offset */ 0, /* EIO pri */ 0, req_done, NULL);
@@ -200,20 +158,18 @@ PHP_METHOD(EIO, write)
 PHP_METHOD(EIO, read)
 {
 	dFILE_DESC;
-	
-	char *func_name;
-	zval *zcallback;
+	dCALLBACK;
 	int len;
 	char *string;
 	eio_req *req;
 	
-	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zlz", &fd, &len, &zcallback) != SUCCESS) {
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zlz", &fd, &len, &callback) != SUCCESS) {
 		return;
 	}
 	
-	EXTRACT_FD(read);
+	EXTRACT_FILE_DESC(EIO, read);
 	
-	CHECK_CALLABLE(zcallback, func_name);
+	CHECK_CALLBACK;
 	
 	string = emalloc(len);
 	
