@@ -144,9 +144,9 @@ PHP_METHOD(Event, stop)
  * Creates an IO event which will trigger when there is data to read and/or data to write
  * on the supplied stream.
  * 
- * @param  int  either IOEvent::READ and/or IOEvent::WRITE depending on type of event
- * @param  resource  the PHP stream to watch
  * @param  callback  the PHP callback to call
+ * @param  resource  the PHP stream to watch
+ * @param  int  either IOEvent::READ and/or IOEvent::WRITE depending on type of event
  */
 PHP_METHOD(IOEvent, __construct)
 {
@@ -155,13 +155,14 @@ PHP_METHOD(IOEvent, __construct)
 	long events;
 	event_object *obj;
 	
-	PARSE_PARAMETERS(IOEvent, "lZz", &events, &fd, &zcallback);
+	PARSE_PARAMETERS(IOEvent, "zZl", &callback, &fd, &events);
 	
 	/* Check if we have the correct flags */
 	if( ! (events & (EV_READ | EV_WRITE)))
 	{
 		/* TODO: libev-specific exception class here */
-		zend_throw_exception(NULL, "libev\\IOEvent: events parameter must be at least one of IOEvent::READ or IOEvent::WRITE", 1 TSRMLS_DC);
+		zend_throw_exception(NULL, "libev\\IOEvent: events parameter must be "
+			"at least one of IOEvent::READ or IOEvent::WRITE", 1 TSRMLS_DC);
 		
 		return;
 	}
@@ -429,7 +430,7 @@ PHP_METHOD(SignalEvent, __construct)
 	event_object *obj;
 	dCALLBACK;
 
-	PARSE_PARAMETERS(SignalEvent, "lz", &signo, &callback);
+	PARSE_PARAMETERS(SignalEvent, "zl", &callback, &signo);
 	
 	CHECK_CALLBACK;
 	
@@ -536,10 +537,10 @@ PHP_METHOD(ChildEvent, getRStatus)
  * because Linux gettimeofday() might return a different time from time(),
  * the libev manual recommends 1.02)
  * 
+ * @param  callback
  * @param  string  Path to file to watch, does not need to exist at time of call
  *                 NOTE: absolute paths are to be preferred, as libev's behaviour
  *                       is undefined if the current working directory changes
- * @param  callback
  * @param  double    the minimum interval libev will check for file-changes,
  *                   will automatically be set to the minimum value by libev if
  *                   the supplied value is smaller than the allowed minimum.
@@ -553,7 +554,7 @@ PHP_METHOD(StatEvent, __construct)
 	event_object *obj;
 	dCALLBACK;
 	
-	PARSE_PARAMETERS(StatEvent, "sz|d", &filename, &filename_len, &callback, &interval);
+	PARSE_PARAMETERS(StatEvent, "zs|d", &callback, &filename, &filename_len, &interval);
 	
 	assert(strlen(filename) == filename_len);
 	
@@ -693,6 +694,12 @@ PHP_METHOD(AsyncEvent, __construct)
 	event_async_init(obj);
 }
 
+/**
+ * Sends an event to the AsyncEvent object which will trigger it in the event
+ * loop.
+ * 
+ * @return boolean  false if the object is not attached to an event loop
+ */
 PHP_METHOD(AsyncEvent, send)
 {
 	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
