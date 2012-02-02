@@ -50,11 +50,11 @@ timer and the uppercase echo.
   $loop = new libev\EventLoop();
 
   $in = fopen('php://stdin', 'r');
-  $echo = new libev\IOEvent(libev\IOEvent::READ, $in, function() use($in)
+  $echo = new libev\IOEvent(function() use($in)
   {
       // Read all (at most 200) and uppercase 
       echo "ECHO: ".strtoupper(fread($in, 200));
-  });
+  }, $in, libev\IOEvent::READ);
 
   $loop->add($echo);
   $loop->run();
@@ -106,20 +106,20 @@ Combining ``libev\SignalEvent`` and ``libev\StatEvent``::
   $loop = new libev\EventLoop();
   
   // Watch ./test for changes
-  $stat = new libev\StatEvent('./test', function() use(&$stat)
+  $stat = new libev\StatEvent(function() use(&$stat)
   {
       printf("%s changed\n", './test');
       var_dump($stat->getAttr());
-  });
+  }, './test');
   
   $loop->add($stat);
   
   // Graceful shutdown on ^C
-  $loop->add(new libev\SignalEvent(libev\SignalEvent::SIGINT, function() use($loop)
+  $loop->add(new libev\SignalEvent(function() use($loop)
   {
       echo "exiting\n";
       $loop->breakLoop();
-  }));
+  }, libev\SignalEvent::SIGINT));
   
   $loop->run();
   
