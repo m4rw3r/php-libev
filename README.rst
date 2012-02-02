@@ -4,7 +4,7 @@ PHP libev Extension
 
 PHP extension providing an object-oriented binding to the libev event-loop library.
 
-Still under development, most events are not yet supported.
+Still under development, many event-types are not yet supported.
 
 Author: Martin Wernståhl <m4rw3r@gmail.com>
 
@@ -297,12 +297,12 @@ associated callback itself).
 ``libev\IOEvent`` extends ``libev\Event``
 -----------------------------------------
 
-**IOEvent::__construct(flag, resource, callback)**
+**IOEvent::__construct(callback, resource, flag)**
 
 Creates an IO event which will trigger when there is data to read and/or data
 to write on the supplied stream.
 
-``flag`` is and integer field with either ``IOEvent::READ`` and/or
+``flag`` is an integer field with either ``IOEvent::READ`` and/or
 ``IOEvent::WRITE`` depending on the types of events you want to listen to.
 
 ``resource`` is a valid PHP stream resource.
@@ -370,7 +370,7 @@ Sets the interval value, changes only take effect when the event has fired.
 ``libev\SignalEvent`` extends ``libev\Event``
 ---------------------------------------------
 
-**SignalEvent::__construct(signal, callback)**
+**SignalEvent::__construct(callback, signal)**
 
 ``signal`` is a ``SignalEvent`` constant, the presense or absense of some of
 the constants match the presense or absense of them in the system's ``signal.h``
@@ -445,7 +445,7 @@ roughly a one-second delay (recommended to be a bit grater than 1.0 seconds
 because Linux gettimeofday() might return a different time from time(),
 the libev manual recommends 1.02)
 
-**StatEvent::__construct(string file, callback, double interval = libev_default_stat_interval)**
+**StatEvent::__construct(callback, string file, double interval = libev_default_stat_interval)**
 
 ``interval`` is the minimum interval libev will check for file-changes,
 will automatically be set to the default value by libev if the supplied
