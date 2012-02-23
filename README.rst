@@ -50,10 +50,15 @@ timer and the uppercase echo.
   $loop = new libev\EventLoop();
 
   $in = fopen('php://stdin', 'r');
-  $echo = new libev\IOEvent(function() use($in)
+  $echo = new libev\IOEvent(function($event) use($in)
   {
       // Read all (at most 200) and uppercase 
       echo "ECHO: ".strtoupper(fread($in, 200));
+      
+      if(feof($in))
+      {
+          $event->stop();
+      }
   }, $in, libev\IOEvent::READ);
 
   $loop->add($echo);
