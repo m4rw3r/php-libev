@@ -41,6 +41,7 @@
 #include "php_network.h"
 #include "ext/sockets/php_sockets.h"
 
+
 #if LIBEV_DEBUG == 2
 #  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
 #  define IF_DEBUG(x) x
@@ -102,9 +103,9 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	return 0;
 }
 
-#define dFILE_DESC        \
+#define dFILE_DESC          \
 	php_socket_t file_desc; \
-	zval **fd;               \
+	zval **fd;              \
 	php_stream *stream;     \
 	php_socket *php_sock;
 

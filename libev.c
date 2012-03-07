@@ -33,7 +33,14 @@
 
 #include "php_libev.h"
 
-/* #include <signal.h> */
+/* PHP 5.4 does not seem to have a default properties hash, just leave it empty */
+#if PHP_MAJOR_VERSION >= 5 && PHP_MINOR_VERSION >= 4
+#  define SET_DEFAULT_PROPERTIES_HASH(t)
+#else
+#  define SET_DEFAULT_PROPERTIES_HASH(t)                                          \
+   do { zend_hash_copy(obj->std.properties, &t->default_properties,               \
+        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *)); } while(0)
+#endif
 
 /* Override PHP's default debugging behaviour
    if we only want to debug this extension */
@@ -81,8 +88,7 @@ zend_object_value name##_create(zend_class_entry *type TSRMLS_DC)\
 	                                                                                             \
 	ALLOC_HASHTABLE(obj->std.properties);                                                        \
 	zend_hash_init(obj->std.properties, 0, NULL, ZVAL_PTR_DTOR, 0);                              \
-	zend_hash_copy(obj->std.properties, &type->default_properties,                               \
-	        (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));                       \
+	SET_DEFAULT_PROPERTIES_HASH(type);                                                           \
 	                                                                                             \
 	retval.handle = zend_objects_store_put(obj, NULL, free_cb, NULL TSRMLS_CC);                  \
 	retval.handlers = &handlers_var;                                                             \
@@ -278,7 +284,7 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 #endif
 
 
-static const function_entry event_methods[] = {
+static const zend_function_entry event_methods[] = {
 	/* Abstract __construct makes the class abstract */
 	ZEND_ME(Event, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_ABSTRACT)
 	ZEND_ME(Event, isActive, NULL, ZEND_ACC_PUBLIC)
@@ -290,12 +296,12 @@ static const function_entry event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
-static const function_entry io_event_methods[] = {
+static const zend_function_entry io_event_methods[] = {
 	ZEND_ME(IOEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
-static const function_entry timer_event_methods[] = {
+static const zend_function_entry timer_event_methods[] = {
 	ZEND_ME(TimerEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(TimerEvent, getRepeat, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(TimerEvent, setRepeat, NULL, ZEND_ACC_PUBLIC)
@@ -305,7 +311,7 @@ static const function_entry timer_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
-static const function_entry periodic_event_methods[] = {
+static const zend_function_entry periodic_event_methods[] = {
 	ZEND_ME(PeriodicEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(PeriodicEvent, getTime, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getOffset, NULL, ZEND_ACC_PUBLIC)
@@ -315,12 +321,12 @@ static const function_entry periodic_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
-static const function_entry signal_event_methods[] = {
+static const zend_function_entry signal_event_methods[] = {
 	ZEND_ME(SignalEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
-static const function_entry child_event_methods[] = {
+static const zend_function_entry child_event_methods[] = {
 	ZEND_ME(ChildEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(ChildEvent, getPid, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(ChildEvent, getRPid, NULL, ZEND_ACC_PUBLIC)
@@ -328,7 +334,7 @@ static const function_entry child_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
-static const function_entry stat_event_methods[] = {
+static const zend_function_entry stat_event_methods[] = {
 	ZEND_ME(StatEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(StatEvent, getPath, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(StatEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
@@ -337,18 +343,18 @@ static const function_entry stat_event_methods[] = {
 	{NULL, NULL, NULL}
 };
 
-static const function_entry idle_event_methods[] = {
+static const zend_function_entry idle_event_methods[] = {
 	ZEND_ME(IdleEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
-static const function_entry async_event_methods[] = {
+static const zend_function_entry async_event_methods[] = {
 	ZEND_ME(AsyncEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(AsyncEvent, send, NULL, ZEND_ACC_PUBLIC)
 	{NULL, NULL, NULL}
 };
 
-static const function_entry event_loop_methods[] = {
+static const zend_function_entry event_loop_methods[] = {
 	ZEND_ME(EventLoop, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, getDefaultLoop, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC | ZEND_ACC_FINAL)
 	ZEND_ME(EventLoop, notifyFork, NULL, ZEND_ACC_PUBLIC)
