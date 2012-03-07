@@ -30,7 +30,7 @@
 
 zend_class_entry *eio_ce;
 
-static struct ev_loop  *eio_loop;
+static struct ev_loop  *eio_loop = NULL;
 static struct ev_idle  eio_poll_watcher;
 static struct ev_async eio_ready_watcher;
 
@@ -70,6 +70,11 @@ static void eio_want_poll()
 
 PHP_METHOD(EIO, init)
 {
+	if(eio_loop)
+	{
+		RETURN_BOOL(0);
+	}
+	
 	/* TODO: Allow any other loop? */
 	eio_loop = EV_DEFAULT;
 	
@@ -79,6 +84,8 @@ PHP_METHOD(EIO, init)
 	ev_unref(eio_loop);
 	
 	eio_init(eio_want_poll, 0);
+	
+	RETURN_BOOL(1);
 }
 
 static int req_done(eio_req *req)
@@ -96,7 +103,7 @@ static int req_done(eio_req *req)
 		case EIO_READ:
 			if(req->result == -1)
 			{
-				ZVAL_LONG(args[0], 0);
+				ZVAL_BOOL(args[0], 0);
 			}
 			else
 			{
@@ -138,6 +145,13 @@ PHP_METHOD(EIO, write)
 	int  string_len;
 	eio_req *req;
 	
+	if( ! eio_loop)
+	{
+		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_DC);
+		
+		return;
+	}
+	
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zsz", &fd, &string, &string_len, &callback) != SUCCESS) {
 		return;
 	}
@@ -163,6 +177,13 @@ PHP_METHOD(EIO, read)
 	char *string;
 	eio_req *req;
 	
+	if( ! eio_loop)
+	{
+		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_DC);
+		
+		return;
+	}
+	
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Zlz", &fd, &len, &callback) != SUCCESS) {
 		return;
 	}
@@ -182,7 +203,7 @@ PHP_METHOD(EIO, read)
 	assert(req);
 }
 
-static const function_entry eio_methods[] = {
+static const zend_function_entry eio_methods[] = {
 	ZEND_ME(EIO, init, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 	ZEND_ME(EIO, write, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 	ZEND_ME(EIO, read, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
