@@ -26,8 +26,6 @@ PHP_METHOD(EventLoop, getDefaultLoop)
 	/* Singleton */
 	if( ! default_event_loop_object)
 	{
-		/* TODO: How do we deal with memory management here?
-		   Do we need to destroy the zval in some kind of extension shutdown? */
 		ALLOC_INIT_ZVAL(default_event_loop_object);
 		
 		/* Create object without calling constructor, we now have an EventLoop missing the ev_loop */
@@ -42,6 +40,7 @@ PHP_METHOD(EventLoop, getDefaultLoop)
 		
 		assert( ! obj->loop);
 		
+		/* TODO: allow other EVFLAGs */
 		obj->loop = ev_default_loop(EVFLAG_AUTO);
 		
 		IF_DEBUG(ev_verify(obj->loop));

@@ -4,7 +4,7 @@ PHP libev Extension
 
 PHP extension providing an object-oriented binding to the libev event-loop library.
 
-Still under development, many event-types are not yet supported.
+Still under development, may contain bugs or missing methods.
 
 Author: Martin Wernståhl <m4rw3r@gmail.com>
 
@@ -24,9 +24,12 @@ Examples
 All of these examples should be working.
 
 Most of these should you be able to combine into the same loop, for example the
-timer and the uppercase echo.
+timer and the uppercase echo. As the event loop is only firing the echo part when
+there is data to read the timer part will not be interrupted by the IOEvent unless
+its callback takes a very long time to complete (which the example here does not).
 
-::
+Two ``TimerEvents`` printing a message, one with 1 second interval, the other only
+a single message after 5 seconds.::
 
   $loop = new libev\EventLoop();
   
@@ -45,7 +48,7 @@ timer and the uppercase echo.
   
   $loop->run();
 
-::
+Read from STDIN and print the uppercased input::
 
   $loop = new libev\EventLoop();
 
@@ -64,7 +67,7 @@ timer and the uppercase echo.
   $loop->add($echo);
   $loop->run();
 
-::
+More precise timer event::
 
   $loop = new libev\EventLoop();
   
@@ -78,7 +81,7 @@ timer and the uppercase echo.
   $loop->add($time);
   $loop->run();
 
-Periodically switching off events::
+Periodically switching on and off events::
 
   $loop = new libev\EventLoop();
 
@@ -106,7 +109,8 @@ Periodically switching off events::
   
   $loop->run();
 
-Combining ``libev\SignalEvent`` and ``libev\StatEvent``::
+Combining ``libev\SignalEvent`` and ``libev\StatEvent`` to look for file changes
+while still performing graceful shutdown on ^C::
 
   $loop = new libev\EventLoop();
   
@@ -132,7 +136,6 @@ Combining ``libev\SignalEvent`` and ``libev\StatEvent``::
 Interface
 =========
 
-
 ``libev\EventLoop``
 -------------------
 
@@ -143,8 +146,9 @@ Creates a new EventLoop object with a new ``ev_loop`` as base.
 **static EventLoop EventLoop::getDefaultLoop()**
 
 Returns the default event loop object, this object is a global singleton
-and it is not recommended to use it unless you require ChildEvent watchers
-as they can only be attached to the default loop.
+and it is not recommended to use it unless you only use one major loop in
+your application or if you require ChildEvent watchers as they can only
+be attached to the default loop.
 
 **boolean EventLoop::notifyFork()**
 
@@ -227,6 +231,33 @@ libev break flag:
 * ``EventLoop::BREAK_ONE``:    will break the innermost loop, default behaviour
 * ``EventLoop::BREAK_ALL``:    will break all the currently running loops
 
+**boolean EventLoop::ref()** and
+**boolean EventLoop::unref()**
+
+Ref/unref can be used to add or remove a reference count on the event loop:
+Every ``Event`` keeps one reference, and as long as the reference count is nonzero,
+``EventLoop::run()`` will not return on its own.
+
+This is useful when you have an Event that you never intend to remove,
+but that nevertheless should not keep ``EventLoop::run()`` from returning.
+In such a case, call ``EventLoop::unref()`` after starting, and ``EventLoop::ref()``
+before stopping it.
+
+Example: Create a signal watcher, but prevent it from keeping ``EventLoop::run()``
+running when nothing else is active::
+
+  $sig = new libev\SignalEvent(libev\SignalEvent::SIGINT, function()
+  {
+      // Do something
+  });
+  
+  $loop->add($sig);
+  $loop->unref();
+  
+  // For some weird reason we want to unregister the above handler
+  $loop->ref();
+  $sig->stop();  // or $loop->remove($sig);
+
 **boolean EventLoop::setIOCollectInterval(double = 0)**
 
 Sets the time libev spends sleeping for new IO events between loop iterations,
@@ -248,6 +279,20 @@ Adds the event to the event loop.
 This method will increase the refcount on the supplied Event, protecting it
 from garbage collection. Refcount will be decreased on ``EventLoop::remove()`` or
 when the EventLoop object is Garbage Collected.
+
+It is recommended to keep a variable pointing to each recurring event you add
+to the loop to be able to remove them when you need to.
+
+The callback of the events can also remove it, because it receives the Event
+object as its only parameter you can do::
+
+  $timer = new libev\TimerEvent(function($event))
+  {
+      if( /* some condition */ )
+      {
+          $event->stop();
+      }
+  }, 1, 1);
 
 **boolean EventLoop::remove(libev\Event)**
 
@@ -273,11 +318,21 @@ it won't accidentally be freed).
 the newly fed event will be invoked before any other events (except other
 fed events). So do NOT create loops by re-feeding an event into the EventLoop
 
+**array(libev/Event) EventLoop::getEvents()**
+
+Returns a list of all registered events.
 
 ``libev\Event``
 ---------------
 
 Abstract base class for all event objects.
+
+All ``Event`` objects have a callback associated with them which will be invoked
+when the ``Event`` is triggered.
+
+Callback signature ``callback(libev\Event $triggered, int $revents)``.
+
+TODO: More here?
 
 **boolean Event::isActive()**
 
@@ -288,6 +343,12 @@ Returns true if the event is active, ie. associated with an event loop.
 Returns true if the event watcher is pending (ie. it has outstanding events but
 the callback has not been called yet).
 
+**int Event::clearPending()**
+
+If the ``Event`` is pending, this function clears its pending status and returns
+its $revents bitset (as if its callback was invoked). If the ``Event`` is not
+pending 0 is returned.
+
 **void Event::setCallback(callback)**
 
 Replaces the PHP callback on an event.
@@ -297,6 +358,11 @@ Replaces the PHP callback on an event.
 Invokes the callback on this event, Event does not need to be attached
 to any EventLoop for this to work (disregarding requirments of the
 associated callback itself).
+
+**boolean Event::stop()**
+
+If the event has been ``add()``ed or ``feed_event()``ed to any ``EventLoop``
+it will be stopped and reset.
 
 
 ``libev\IOEvent`` extends ``libev\Event``
@@ -326,13 +392,33 @@ and after that will repeat with an approximate interval of ``repeat``.
 ``interval`` is the time between repeats, seconds. Default is 0, which equals
 no repeating event.
 
-**double TimerEvent::getRepeat()**
+**double TimerEvent::getRepeat()** and **void TimerEvent::setRepeat()**
 
-Returns the seconds between event triggering.
+Gets/sets the seconds between event triggering.
 
-**double TimerEvent::getAfter()**
+**double|false TimerEvent::getAfter()**
 
 Returns the time from the loop start until the first triggering of this TimerEvent.
+
+False is returned if the event has not been registered with any ``EventLoop``
+
+**boolean TimerEvent::again()**
+
+This will act as if the timer timed out and restarts it again if it is repeating.
+
+The exact semantics are:
+ * If the timer is pending, its pending status is cleared.
+ * If the timer is started but non-repeating, stop it (as if it timed out).
+ * If the timer is repeating, either start it if necessary (with the repeat value),
+   or reset the running timer to the repeat value.
+
+See <http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod#Be_smart_about_timeouts>
+for more information.
+
+**double|false TimerEvent::getRemaining()**
+
+Returns the remaining time until the timer fire, relative to the event loop time.
+Returns false if the event is not registered with any ``EventLoop``.
 
 
 ``libev\PeriodicEvent`` extends ``libev\Event``
@@ -371,13 +457,26 @@ When repeating, returns the current interval value.
 
 Sets the interval value, changes only take effect when the event has fired.
 
+**boolean PeriodicEvent::again()**
+
+Works like the ``TimerEvent::again()``, see ``libev\TimerEvent::again()`` for
+more information.
+
+**double|false PeriodicEvent::getRemaining()**
+
+Returns the remaining time until the timer fire, relative to the event loop time.
+Returns false if the event is not registered with any ``EventLoop``.
+
 
 ``libev\SignalEvent`` extends ``libev\Event``
 ---------------------------------------------
 
 **SignalEvent::__construct(callback, signal)**
 
-``signal`` is a ``SignalEvent`` constant, the presense or absense of some of
+This event will be triggered when the process receives the specificed ``signal``
+signal.
+
+``signal`` is a ``SignalEvent`` class constant, the presense or absense of some of
 the constants match the presense or absense of them in the system's ``signal.h``
 header.
 
@@ -487,5 +586,67 @@ previous events.
 
 Returns the previous file attributes, all keys will be 0 if the
 event has not yet been added to an EventLoop.
+
+
+``libev\IdleEvent`` extends ``libev\Event``
+-------------------------------------------
+
+``IdleEvent`` triggers when no other events of the same or higher priority
+are pending (other idle watchers do not count as receiving "events").
+
+That is, as long as your process is busy handling sockets or timeouts
+(or even signals, imagine) of the same or higher priority it will not
+be triggered. But when your process is idle (or only lower-priority
+watchers are pending), the idle watchers are being called once per event
+loop iteration - until stopped, that is, or your process receives more
+events and becomes busy again with higher priority stuff.
+
+The most noteworthy effect is that as long as any idle watchers are active,
+the process will not block when waiting for new events.
+
+Apart from keeping your process non-blocking (which is a useful effect on
+its own sometimes), idle watchers are a good place to do "pseudo-background
+processing", or delay processing stuff to after the event loop has handled
+all outstanding events.
+
+**IdleEvent::__construct(callback)**
+
+Constructor.
+
+
+``libev\CleanupEvent`` extends ``libev\Event``
+----------------------------------------------
+
+``CleanupEvent`` is triggered just before the ``EventLoop`` object is destroyed
+by the PHP GC (ie. when the loop is no longer used).
+
+There is no guarantee that the callback will be called (eg. in case of fatal
+PHP errors or similar things), but it provides a conventient way to associate
+cleanup code with the event loop.
+
+**CleanupEvent::__construct(callback)**
+
+Constructor.
+
+
+``libev\AsyncEvent`` extends ``libev\Event``
+--------------------------------------------
+
+``AsyncEvent`` are ``Event`` objects which wait for a signal from another
+part of the application before firing. It is triggered with the
+``AsyncEvent::send()`` method and will invoke the callback on the next loop
+iteration.
+
+``AsyncEvent`` instances can be activated as many times as needed, they will
+not be removed from the ``EventLoop`` unless manually removed.
+
+**AsyncEvent::__construct(callback)**
+
+Constructor.
+
+**bool AsyncEvent::send()**
+
+Tells the ``AsyncEvent`` that its callback should be invoked on the next
+loop iteration.
 
 .. _`PCNTL PHP Extension`: http://www.php.net/manual/en/book.pcntl.php

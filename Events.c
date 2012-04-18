@@ -37,6 +37,7 @@ PHP_METHOD(Event, isPending)
 /**
  * Replaces the PHP callback on an event.
  * 
+ * @param  callback
  * @return void
  */
 PHP_METHOD(Event, setCallback)
@@ -70,7 +71,6 @@ PHP_METHOD(Event, setCallback)
  * returns its revents bitset (as if its callback was invoked). If the watcher
  * isn't pending it returns 0.
  * 
- * @param  Event
  * @return int  revents bitset if pending, 0 if not (or not associated with EventLoop)
  */
 PHP_METHOD(Event, clearPending)
