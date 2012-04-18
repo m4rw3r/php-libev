@@ -24,9 +24,6 @@ PHP_METHOD(Event, isActive)
  * Returns true if the event watcher is pending (ie. it has outstanding events but
  * the callback has not been called yet).
  * 
- * TODO: Investigate what happens if we free obj->watcher while is_pending is true,
- *       the lbev manual says it is a bad idea
- * 
  * @return boolean
  * @return null  If object has not been initialized
  */
@@ -55,6 +52,7 @@ PHP_METHOD(Event, setCallback)
 	
 	obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
+	/* TODO: Remove? */
 	assert(obj->callback);
 	
 	/* Destroy existing callback reference */
@@ -119,8 +117,8 @@ PHP_METHOD(Event, invoke)
 		return;
 	}
 	
-	/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT! */
-	/* Can't use event_invoke here as it requires an event_loop_object */
+	/* NOTE: loop IS NULL-POINTER, MAKE SURE CALLBACK DOES NOT READ IT!
+	   Can't use event_invoke macro here as it requires an event_loop_object */
 	ev_invoke(loop, obj->watcher, revents);
 }
 
@@ -675,6 +673,23 @@ PHP_METHOD(IdleEvent, __construct)
 	EVENT_OBJECT_PREPARE(obj, callback);
 	
 	event_idle_init(obj);
+}
+
+
+PHP_METHOD(CleanupEvent, __construct)
+{
+	event_object *obj;
+	dCALLBACK;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &callback) != SUCCESS) {
+		return;
+	}
+	
+	CHECK_CALLBACK;
+	
+	EVENT_OBJECT_PREPARE(obj, callback);
+	
+	event_cleanup_init(obj);
 }
 
 

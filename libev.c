@@ -34,7 +34,7 @@
 #include "php_libev.h"
 
 /* PHP 5.4 does not seem to have a default properties hash, just leave it empty */
-#if PHP_MAJOR_VERSION >= 5 && PHP_MINOR_VERSION >= 4
+#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || PHP_MAJOR_VERSION > 5
 #  define SET_DEFAULT_PROPERTIES_HASH(t)
 #else
 #  define SET_DEFAULT_PROPERTIES_HASH(t)                                          \
@@ -63,6 +63,7 @@ zend_class_entry *event_ce,
 	*child_event_ce,
 	*stat_event_ce,
 	*idle_event_ce,
+	*cleanup_event_ce,
 	*async_event_ce,
 	*event_loop_ce;
 
@@ -169,7 +170,7 @@ FREE_STORAGE(stat_event_object,
 	   constructor might have failed, so check */
 	if(((ev_stat *)obj->watcher)->path)
 	{
-		efree(((ev_stat *)obj->watcher)->path);
+		efree((char *)((ev_stat *)obj->watcher)->path);
 	}
 	
 	FREE_EVENT;
@@ -180,33 +181,8 @@ FREE_STORAGE(event_loop_object,
 	
 	assert(obj->loop);
 	
-	if(obj->events)
-	{
-		/* Stop and free all in the linked list */
-		event_object *ev = obj->events;
-		event_object *tmp;
-		
-		while(ev)
-		{
-			IF_DEBUG(libev_printf("Freeing event 0x%lx from loop\n", (size_t) ev->this));
-			assert(ev->this);
-			assert(ev->loop_obj);
-			
-			EVENT_STOP(ev);
-			
-			tmp = ev->next;
-			
-			/* Reset the struct */
-			ev->next     = NULL;
-			ev->prev     = NULL;
-			ev->loop_obj = NULL;
-			
-			EVENT_DTOR(ev);
-			
-			ev = tmp;
-		}
-	}
-	
+	/* We destroy the loop first, so the cleanup is called before the Event objects are
+	   (maybe) deallocated */
 	if(obj->loop)
 	{
 		/* If it is the default loop, we need to free its "singleton-zval" as we
@@ -226,6 +202,33 @@ FREE_STORAGE(event_loop_object,
 		
 		ev_loop_destroy(obj->loop);
 	}
+	
+	if(obj->events)
+	{
+		/* Stop and free all in the linked list */
+		event_object *ev = obj->events;
+		event_object *tmp;
+		
+		while(ev)
+		{
+			IF_DEBUG(libev_printf("Freeing event 0x%lx from loop\n", (size_t) ev->this));
+			assert(ev->this);
+			assert(ev->loop_obj);
+			
+			/* No need to stop the event, already done in ev_loop_destroy */
+			
+			tmp = ev->next;
+			
+			/* Reset the struct */
+			ev->next     = NULL;
+			ev->prev     = NULL;
+			ev->loop_obj = NULL;
+			
+			EVENT_DTOR(ev);
+			
+			ev = tmp;
+		}
+	}
 )
 
 CREATE_EVENT_HANDLER(ev_watcher, event_object_free)
@@ -236,6 +239,7 @@ CREATE_EVENT_HANDLER(ev_signal, event_object_free)
 CREATE_EVENT_HANDLER(ev_child, event_object_free)
 CREATE_EVENT_HANDLER(ev_stat, stat_event_object_free)
 CREATE_EVENT_HANDLER(ev_idle, event_object_free)
+CREATE_EVENT_HANDLER(ev_cleanup, event_object_free)
 CREATE_EVENT_HANDLER(ev_async, event_object_free)
 CREATE_HANDLER(event_loop_object, event_loop_object, event_loop_object_free, event_loop_object_handlers, ;)
 
@@ -345,6 +349,11 @@ static const zend_function_entry stat_event_methods[] = {
 
 static const zend_function_entry idle_event_methods[] = {
 	ZEND_ME(IdleEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
+	{NULL, NULL, NULL}
+};
+
+static const zend_function_entry cleanup_event_methods[] = {
+	ZEND_ME(CleanupEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	{NULL, NULL, NULL}
 };
 
@@ -502,6 +511,11 @@ PHP_MINIT_FUNCTION(libev)
 	INIT_CLASS_ENTRY(ce, "libev\\AsyncEvent", async_event_methods);
 	async_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
 	async_event_ce->create_object = ev_async_create;
+	
+	/* libev\CleanupEvent */
+	INIT_CLASS_ENTRY(ce, "libev\\CleanupEvent", cleanup_event_methods);
+	cleanup_event_ce = zend_register_internal_class_ex(&ce, event_ce, NULL TSRMLS_CC);
+	cleanup_event_ce->create_object = ev_cleanup_create;
 	
 	
 	/* libev\EventLoop */

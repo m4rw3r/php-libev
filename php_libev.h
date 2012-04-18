@@ -244,23 +244,23 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 #  define EVENT_INCREF(event_object)
 #  define EVENT_DTOR(event_object)
 #else
-	#if LIBEV_DEBUG > 1
-#       define EVENT_INCREF(event_object) \
-			do { libev_printf("Increased refcount on Event 0x%lx to %d\n", \
-			(unsigned long)((size_t) event_object->this),         \
-			Z_REFCOUNT_P(event_object->this));   \
-			zval_add_ref(&event_object->this); } while(0)
-#       define EVENT_DTOR(event_object) \
-			do { libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
-			(unsigned long)((size_t) event_object->this),          \
-			Z_REFCOUNT_P(event_object->this) - 1);                 \
-			zval_ptr_dtor(&event_object->this); } while(0)
-#   else
-#       define EVENT_INCREF(event_object) \
-			do { zval_add_ref(&event_object->this); } while(0)
-#       define EVENT_DTOR(event_object) \
-			do { zval_ptr_dtor(&event_object->this); } while(0)
-#   endif
+#  if LIBEV_DEBUG > 1
+#    define EVENT_INCREF(event_object) \
+		do { libev_printf("Increased refcount on Event 0x%lx to %d\n", \
+		(unsigned long)((size_t) event_object->this),         \
+		Z_REFCOUNT_P(event_object->this));   \
+		zval_add_ref(&event_object->this); } while(0)
+#    define EVENT_DTOR(event_object) \
+		do { libev_printf("Decreasing refcount on Event 0x%lx to %d\n", \
+		(unsigned long)((size_t) event_object->this),          \
+		Z_REFCOUNT_P(event_object->this) - 1);                 \
+		zval_ptr_dtor(&event_object->this); } while(0)
+#  else
+#    define EVENT_INCREF(event_object) \
+		do { zval_add_ref(&event_object->this); } while(0)
+#    define EVENT_DTOR(event_object) \
+		do { zval_ptr_dtor(&event_object->this); } while(0)
+#  endif
 #endif
 
 /* Protects event_objects from garbage collection by increasing their
@@ -346,6 +346,7 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, stat)      \
 		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, idle)      \
 		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, async)     \
+		else EVENT_WATCHER_ACTION(event, event->loop_obj, stop, cleanup)   \
 	}
 
 

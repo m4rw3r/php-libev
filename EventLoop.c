@@ -530,6 +530,7 @@ PHP_METHOD(EventLoop, add)
 		else EVENT_WATCHER_ACTION(event, loop_obj, start, stat)
 		else EVENT_WATCHER_ACTION(event, loop_obj, start, idle)
 		else EVENT_WATCHER_ACTION(event, loop_obj, start, async)
+		else EVENT_WATCHER_ACTION(event, loop_obj, start, cleanup)
 		
 		if( ! event_has_loop(event))
 		{
