@@ -47,7 +47,7 @@ static void eio_repeat_poll(struct ev_loop *loop, ev_idle *w, int revents)
 	libev_printf("eio_poll(): %d\n", i);
 }
 
-static void eio_ready(struct ev_loop *loop, ev_idle *w, int revents)
+static void eio_ready(struct ev_loop *loop, ev_async *w, int revents)
 {
 	IF_DEBUG(libev_printf("eio_ready() "));
 	int i = eio_poll();
