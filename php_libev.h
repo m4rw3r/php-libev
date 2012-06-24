@@ -39,8 +39,10 @@
 #include "php_ini.h"
 #include "php_streams.h"
 #include "php_network.h"
-#include "ext/sockets/php_sockets.h"
 
+#if HAVE_SOCKETS
+#  include "ext/sockets/php_sockets.h"
+#endif
 
 #if LIBEV_DEBUG == 2
 #  define libev_printf(...) php_printf("phplibev: " __VA_ARGS__)
@@ -103,13 +105,21 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	return 0;
 }
 
-#define dFILE_DESC          \
+#if HAVE_SOCKETS
+#  define dFILE_DESC          \
 	php_socket_t file_desc; \
 	zval **fd;              \
 	php_stream *stream;     \
 	php_socket *php_sock;
+#else
+#  define dFILE_DESC          \
+	php_socket_t file_desc; \
+	zval **fd;              \
+	php_stream *stream;
+#endif
+	
 
-#define EXTRACT_FILE_DESC(class, method) \
+#define EXTRACT_FILE_DESC_FROM_STREAM(class, method)\
 	/* Attempt to get the file descriptor from the stream */                              \
 	if(ZEND_FETCH_RESOURCE_NO_RETURN(stream, php_stream*,                                 \
 		fd, -1, NULL, php_file_le_stream()))                                              \
@@ -124,6 +134,9 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 			return;                                                                       \
 		}                                                                                 \
 	}                                                                                     \
+
+#if HAVE_SOCKETS
+#  define EXTRACT_FILE_DESC(class, method) EXTRACT_FILE_DESC_FROM_STREAM(class, method)   \
 	else                                                                                  \
 	{                                                                                     \
 		if(ZEND_FETCH_RESOURCE_NO_RETURN(php_sock, php_socket *,                          \
@@ -135,13 +148,23 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 		{                                                                                 \
 			/* TODO: libev-specific exception class here */                               \
 			zend_throw_exception(NULL,                                                    \
-				"libev\\" #class  ":: " #method "(): fd argument must be either valid "   \
+				"libev\\" #class  ":: " #method "(): fd argument must be either a valid " \
 				"PHP stream or valid PHP socket resource", 1 TSRMLS_DC);                  \
 		                                                                                  \
 			return;                                                                       \
 		}                                                                                 \
 	}
-
+#else
+#  define EXTRACT_FILE_DESC(class, method) EXTRACT_FILE_DESC_FROM_STREAM(class, method)   \
+	else {                                                                                \
+		/* TODO: libev-specific exception class here */                                   \
+		zend_throw_exception(NULL,                                                        \
+			"libev\\" #class  ":: " #method "(): fd argument must be a valid "            \
+			"PHP stream resource", 1 TSRMLS_DC);                                          \
+	                                                                                      \
+		return;                                                                           \
+	}
+#endif
 
 /* TODO: Is it appropriate to throw an exception here? if we do not, incomplete Event
          objects are created when parameter parsing fails */
