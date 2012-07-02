@@ -319,6 +319,7 @@ static const zend_function_entry periodic_event_methods[] = {
 	ZEND_ME(PeriodicEvent, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR | ZEND_ACC_FINAL)
 	ZEND_ME(PeriodicEvent, getTime, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getOffset, NULL, ZEND_ACC_PUBLIC)
+	ZEND_ME(PeriodicEvent, setOffset, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, getInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, setInterval, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(PeriodicEvent, again, NULL, ZEND_ACC_PUBLIC)

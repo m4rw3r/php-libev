@@ -248,6 +248,8 @@ inline int instance_of_class(const zend_class_entry *instance_ce, const zend_cla
 	ev_clear_pending(loop_obj->loop, event->watcher)
 #define event_timer_again(event) \
 	if(event->loop_obj) { ev_timer_again(event->loop_obj->loop, (ev_timer*)event->watcher); }
+#define event_periodic_again(event) \
+	ev_periodic_again(event->loop_obj->loop, (ev_periodic*)event->watcher);
 #define event_timer_remaining(event) \
 	ev_timer_remaining(event->loop_obj->loop, (ev_timer *)event->watcher)
 #define event_embed_sweep(event) \

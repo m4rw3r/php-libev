@@ -369,6 +369,24 @@ PHP_METHOD(PeriodicEvent, getOffset)
 }
 
 /**
+ * Changes the offset value, this will only be affected when $event->again() is called.
+ * 
+ * @param  double
+ * @return void
+ */
+PHP_METHOD(PeriodicEvent, setOffset)
+{
+	double offset;
+	event_object *obj = (event_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
+	
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &offset) != SUCCESS) {
+		return;
+	}
+	
+	((ev_periodic*)obj->watcher)->offset = offset;
+}
+
+/**
  * When repeating, returns the current interval value.
  * 
  * @return double
@@ -420,6 +438,8 @@ PHP_METHOD(PeriodicEvent, again)
 	/* TODO: Throw exception */
 	RETURN_BOOL(0);
 }
+
+/* TODO: Reschedule callback for PeriodicEvent? */
 
 
 PHP_METHOD(SignalEvent, __construct)
