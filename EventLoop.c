@@ -623,7 +623,7 @@ PHP_METHOD(EventLoop, feedEvent)
 	/* Only allow Events which are associated with this EventLoop
 	   or those which are not associated with any EventLoop yet */
 	if(loop_obj->loop &&
-		( ! event_has_loop(event) || event_is_in_loop(event, loop_obj)))
+		( ! event_has_loop(event) || event_in_loop(loop_obj, event)))
 	{
 		IF_DEBUG(libev_printf("Feeding event with pending %d and active %d...",
 			event_is_pending(event), event_is_active(event)));
