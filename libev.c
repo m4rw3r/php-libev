@@ -178,12 +178,10 @@ FREE_STORAGE(stat_event_object,
 
 
 FREE_STORAGE(event_loop_object,
-	
-	assert(obj->loop);
-	
 	/* We destroy the loop first, so the cleanup is called before the Event objects are
 	   (maybe) deallocated */
-	if(obj->loop)
+	if(obj->loop) /* Loop might be half-initialized, can be caused by exception cast by
+	                 EventLoop::__construct */
 	{
 		/* If it is the default loop, we need to free its "singleton-zval" as we
 		   already are in the shutdown phase (so no risk of freeing the default
@@ -543,6 +541,9 @@ PHP_MINIT_FUNCTION(libev)
 	backend_constant(PORT);
 	backend_constant(ALL);
 #   undef backend_constant
+	
+	/* BACKEND_AUTO = EVFLAG_AUTO */
+	zend_declare_class_constant_long(event_loop_ce, "BACKEND_AUTO", sizeof("BACKEND_AUTO") - 1, (long) EVFLAG_AUTO TSRMLS_CC);
 	
 #   if INCLUDE_EIO
 		INIT_CLASS_ENTRY(ce, "libev\\EIO", eio_methods);

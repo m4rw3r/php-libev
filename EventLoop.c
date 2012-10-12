@@ -4,12 +4,32 @@
  */
 PHP_METHOD(EventLoop, __construct)
 {
+	int backend = EVFLAG_AUTO;
 	event_loop_object *obj = (event_loop_object *)zend_object_store_get_object(getThis() TSRMLS_CC);
 	
 	assert( ! obj->loop);
 	
-	/* TODO: Do we need to be able to change the parameter to ev_loop_new() here? */
-	obj->loop = ev_loop_new(EVFLAG_AUTO);
+	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|l", &backend) != SUCCESS) {
+		return;
+	}
+	
+	/* Check parameter */
+	if(EVFLAG_AUTO       != backend &&
+	   EVBACKEND_SELECT  != backend &&
+	   EVBACKEND_POLL    != backend &&
+	   EVBACKEND_EPOLL   != backend &&
+	   EVBACKEND_KQUEUE  != backend &&
+	   EVBACKEND_DEVPOLL != backend &&
+	   EVBACKEND_PORT    != backend &&
+	   EVBACKEND_ALL     != backend) {
+		/* TODO: libev-specific exception class here */
+		zend_throw_exception(NULL, "libev\\EventLoop: backend parameter must be "
+			"one of the EventLoop::BACKEND_* constants.", 1 TSRMLS_DC);
+		
+		return;
+	}
+	
+	obj->loop = ev_loop_new(backend);
 	
 	IF_DEBUG(ev_verify(obj->loop));
 }
