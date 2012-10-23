@@ -269,13 +269,13 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 		zval_dtor(&retval);
 	}
 	
-	zval_ptr_dtor(&args[0]);
-	zval_ptr_dtor(&args[1]);
-	
 	if(loop && event_has_loop(w->event) && ! ev_is_active(w) && ! ev_is_pending(w) )
 	{
 		EVENT_LOOP_REF_DEL(w->event);
 	}
+	
+	zval_ptr_dtor(&args[0]);
+	zval_ptr_dtor(&args[1]);
 }
 
 #include "Events.c"
