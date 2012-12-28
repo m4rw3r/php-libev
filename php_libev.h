@@ -90,7 +90,7 @@ typedef struct _event_loop_object {
 
 /* Returns true if the supplied *instance_ce == *ce or if any of *instance_ce's parent
    class-entries equals *ce. Ie. instanceof, but without the interface check. */
-inline int instance_of_class(const zend_class_entry *instance_ce, const zend_class_entry *ce)
+static inline int instance_of_class(const zend_class_entry *instance_ce, const zend_class_entry *ce)
 {
 	while(instance_ce)
 	{
