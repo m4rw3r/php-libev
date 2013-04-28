@@ -249,6 +249,8 @@ static void event_callback(struct ev_loop *loop, ev_watcher *w, int revents)
 	/* Note: loop might be null pointer because of Event::invoke() */
 	IF_DEBUG(libev_printf("Calling PHP callback\n"));
 	
+	TSRMLS_FETCH();
+	
 	zval retval;
 	zval *args[2];
 	
