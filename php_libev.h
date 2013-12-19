@@ -129,7 +129,7 @@ static inline int instance_of_class(const zend_class_entry *instance_ce, const z
 		{                                                                                 \
 			/* TODO: libev-specific exception class here */                               \
 			zend_throw_exception(NULL, "libev\\" #class  ":: " #method                    \
-				"(): invalid stream", 1 TSRMLS_DC);                                       \
+				"(): invalid stream", 1 TSRMLS_CC);                                       \
 		                                                                                  \
 			return;                                                                       \
 		}                                                                                 \
@@ -149,7 +149,7 @@ static inline int instance_of_class(const zend_class_entry *instance_ce, const z
 			/* TODO: libev-specific exception class here */                               \
 			zend_throw_exception(NULL,                                                    \
 				"libev\\" #class  ":: " #method "(): fd argument must be either a valid " \
-				"PHP stream or valid PHP socket resource", 1 TSRMLS_DC);                  \
+				"PHP stream or valid PHP socket resource", 1 TSRMLS_CC);                  \
 		                                                                                  \
 			return;                                                                       \
 		}                                                                                 \
@@ -160,7 +160,7 @@ static inline int instance_of_class(const zend_class_entry *instance_ce, const z
 		/* TODO: libev-specific exception class here */                                   \
 		zend_throw_exception(NULL,                                                        \
 			"libev\\" #class  ":: " #method "(): fd argument must be a valid "            \
-			"PHP stream resource", 1 TSRMLS_DC);                                          \
+			"PHP stream resource", 1 TSRMLS_CC);                                          \
 	                                                                                      \
 		return;                                                                           \
 	}
@@ -172,7 +172,7 @@ static inline int instance_of_class(const zend_class_entry *instance_ce, const z
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, param_str, __VA_ARGS__) != SUCCESS) { \
 		/* TODO: libev exception */                                                           \
 		zend_throw_exception(NULL, "Error parsing parameters to libev\\" #class               \
-			"::__construct()", 0 TSRMLS_DC);                                                  \
+			"::__construct()", 0 TSRMLS_CC);                                                  \
 		return;                                                                               \
 	}
 

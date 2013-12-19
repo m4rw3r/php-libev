@@ -160,7 +160,7 @@ PHP_METHOD(IOEvent, __construct)
 	{
 		/* TODO: libev-specific exception class here */
 		zend_throw_exception(NULL, "libev\\IOEvent: events parameter must be "
-			"at least one of IOEvent::READ or IOEvent::WRITE", 1 TSRMLS_DC);
+			"at least one of IOEvent::READ or IOEvent::WRITE", 1 TSRMLS_CC);
 		
 		return;
 	}

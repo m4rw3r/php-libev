@@ -24,7 +24,7 @@ PHP_METHOD(EventLoop, __construct)
 	   EVBACKEND_ALL     != backend) {
 		/* TODO: libev-specific exception class here */
 		zend_throw_exception(NULL, "libev\\EventLoop: backend parameter must be "
-			"one of the EventLoop::BACKEND_* constants.", 1 TSRMLS_DC);
+			"one of the EventLoop::BACKEND_* constants.", 1 TSRMLS_CC);
 		
 		return;
 	}
@@ -538,7 +538,7 @@ PHP_METHOD(EventLoop, add)
 			if( ! ev_is_default_loop(loop_obj->loop))
 			{
 				/* TODO: libev-specific exception class here */
-				zend_throw_exception(NULL, "libev\\ChildEvent can only be added to the default event-loop", 1 TSRMLS_DC);
+				zend_throw_exception(NULL, "libev\\ChildEvent can only be added to the default event-loop", 1 TSRMLS_CC);
 				
 				return;
 			}

@@ -147,7 +147,7 @@ PHP_METHOD(EIO, write)
 	
 	if( ! eio_loop)
 	{
-		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_DC);
+		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_CC);
 		
 		return;
 	}
@@ -179,7 +179,7 @@ PHP_METHOD(EIO, read)
 	
 	if( ! eio_loop)
 	{
-		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_DC);
+		zend_throw_exception(NULL, "libev\\EIO: EIO not initialized", 1 TSRMLS_CC);
 		
 		return;
 	}
